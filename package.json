@@ -1,0 +1,64 @@
+{
+  "name": "aitraffic",
+  "version": "0.1.0",
+  "description": "Open, agent-native evidence for AI and search acquisition.",
+  "homepage": "https://aitraffic.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devanshug2307/aitraffic.git"
+  },
+  "bugs": {
+    "url": "https://github.com/devanshug2307/aitraffic/issues"
+  },
+  "type": "module",
+  "bin": {
+    "aitraffic": "dist/src/cli.js"
+  },
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./schema": {
+      "types": "./dist/src/core/evidence.d.ts",
+      "import": "./dist/src/core/evidence.js"
+    }
+  },
+  "files": [
+    "dist/src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "check": "npm run typecheck && npm test",
+    "cli": "node dist/src/cli.js",
+    "mcp": "node dist/src/cli.js mcp serve",
+    "prepack": "npm run check"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "seo",
+    "geo",
+    "aeo",
+    "analytics",
+    "ai-traffic",
+    "mcp",
+    "cli"
+  ],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2"
+  }
+}

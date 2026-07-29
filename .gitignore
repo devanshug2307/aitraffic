@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.aitraffic/cache/
+.aitraffic/credentials/
+.aitraffic/google.json
+.aitraffic/*.db
+.aitraffic/*.sqlite
+site/
+.DS_Store
+*.log
+!examples/*.log
+coverage/
+.env
+.env.*
+!.env.example

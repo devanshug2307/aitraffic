@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "aitraffic": {
+      "command": "node",
+      "args": ["dist/src/cli.js", "mcp", "serve"],
+      "env": {}
+    }
+  }
+}

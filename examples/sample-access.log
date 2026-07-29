@@ -1,0 +1,5 @@
+203.0.113.10 - - [29/Jul/2026:10:00:00 +0000] "GET /pricing HTTP/1.1" 200 4210 "-" "Mozilla/5.0 (compatible; OAI-SearchBot/1.4; +https://openai.com/searchbot)"
+203.0.113.11 - - [29/Jul/2026:10:00:02 +0000] "GET /docs/api HTTP/1.1" 200 9231 "-" "Mozilla/5.0 (compatible; ChatGPT-User/1.0; +https://openai.com/bot)"
+203.0.113.12 - - [29/Jul/2026:10:00:04 +0000] "GET /research HTTP/1.1" 403 511 "-" "ClaudeBot/1.0"
+203.0.113.13 - - [29/Jul/2026:10:00:06 +0000] "GET /compare HTTP/1.1" 200 7211 "-" "Mozilla/5.0 (compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)"
+203.0.113.14 - - [29/Jul/2026:10:00:08 +0000] "GET / HTTP/1.1" 200 12031 "https://www.google.com/" "Mozilla/5.0 AppleWebKit/537.36 Chrome/138.0.0.0 Safari/537.36"

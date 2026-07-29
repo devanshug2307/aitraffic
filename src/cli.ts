@@ -1,0 +1,631 @@
+#!/usr/bin/env node
+
+import { runDoctor } from "./commands/doctor.js";
+import {
+  acquisitionPeriods,
+  buildAcquisitionReport,
+} from "./analysis/acquisition.js";
+import {
+  configureGoogleConnector,
+  readGoogleConnectorConfig,
+} from "./connectors/google/config.js";
+import { ExternalGoogleDataProvider } from "./connectors/google/externalProvider.js";
+import { classifyUserAgent } from "./core/agentRegistry.js";
+import { evidenceJsonSchema } from "./core/evidence.js";
+import { analyzeLogFile } from "./core/logs.js";
+import {
+  type AgentIntegration,
+  initializeProject,
+} from "./core/project.js";
+import {
+  AppError,
+  failure,
+  success,
+  type CommandResult,
+} from "./core/result.js";
+import { VERSION } from "./core/version.js";
+import { serveMcp } from "./mcp/server.js";
+
+type OutputFormat = "text" | "json";
+
+interface ParsedArguments {
+  positional: string[];
+  format: OutputFormat;
+}
+
+const HELP = `AItraffic — terminal-first AI visibility evidence
+
+Usage:
+  aitraffic init [--agent codex|claude-code|both] [--site URL] [--force]
+  aitraffic doctor
+  aitraffic schema evidence
+  aitraffic logs import <path>
+  aitraffic crawlers <path>
+  aitraffic classify <user-agent>
+  aitraffic google configure --adapter-script PATH --profile NAME [--ga4-property ID] [--gsc-site SITE] [--dry-run]
+  aitraffic google status
+  aitraffic google inventory
+  aitraffic ga4 report [--start DATE] [--end DATE] [--dimensions CSV] [--metrics CSV] [--limit N]
+  aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N]
+  aitraffic report acquisition [--days N]
+  aitraffic mcp serve
+  aitraffic version
+
+Global options:
+  --format text|json   Output mode; text is the default
+  --json               Alias for --format json
+  --help, -h           Show this help
+`;
+
+function parseGlobalArguments(argv: string[]): ParsedArguments {
+  const positional: string[] = [];
+  let format: OutputFormat = "text";
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const value = argv[index];
+    if (value === "--json") {
+      format = "json";
+      continue;
+    }
+    if (value === "--format") {
+      const requested = argv[index + 1];
+      if (requested !== "text" && requested !== "json") {
+        throw new AppError(
+          "INVALID_FORMAT",
+          "--format must be either text or json.",
+        );
+      }
+      format = requested;
+      index += 1;
+      continue;
+    }
+    if (value?.startsWith("--format=")) {
+      const requested = value.slice("--format=".length);
+      if (requested !== "text" && requested !== "json") {
+        throw new AppError(
+          "INVALID_FORMAT",
+          "--format must be either text or json.",
+        );
+      }
+      format = requested;
+      continue;
+    }
+    if (value !== undefined) {
+      positional.push(value);
+    }
+  }
+
+  return { positional, format };
+}
+
+function extractOption(
+  args: string[],
+  name: string,
+): { value?: string; remaining: string[] } {
+  const remaining: string[] = [];
+  let found: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+    if (value === name) {
+      const optionValue = args[index + 1];
+      if (!optionValue || optionValue.startsWith("--")) {
+        throw new AppError(
+          "MISSING_OPTION_VALUE",
+          `${name} requires a value.`,
+        );
+      }
+      found = optionValue;
+      index += 1;
+      continue;
+    }
+    if (value?.startsWith(`${name}=`)) {
+      found = value.slice(name.length + 1);
+      continue;
+    }
+    if (value !== undefined) {
+      remaining.push(value);
+    }
+  }
+
+  const result: { value?: string; remaining: string[] } = { remaining };
+  if (found !== undefined) {
+    result.value = found;
+  }
+  return result;
+}
+
+function takeFlag(
+  args: string[],
+  name: string,
+): { present: boolean; remaining: string[] } {
+  return {
+    present: args.includes(name),
+    remaining: args.filter((value) => value !== name),
+  };
+}
+
+function assertNoUnknownOptions(args: string[]): void {
+  const unknown = args.find((value) => value.startsWith("-"));
+  if (unknown) {
+    throw new AppError("UNKNOWN_OPTION", `Unknown option: ${unknown}`);
+  }
+}
+
+function commaSeparated(
+  value: string | undefined,
+  fallback: string[],
+): string[] {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (value === "none") {
+    return [];
+  }
+  const values = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (values.length === 0) {
+    throw new AppError("INVALID_LIST", "Comma-separated option cannot be empty.");
+  }
+  return values;
+}
+
+function positiveInteger(
+  value: string | undefined,
+  fallback: number,
+  label: string,
+  maximum: number,
+): number {
+  if (value === undefined) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > maximum) {
+    throw new AppError(
+      "INVALID_NUMBER",
+      `${label} must be an integer from 1 to ${maximum}.`,
+    );
+  }
+  return parsed;
+}
+
+async function googleProvider() {
+  const config = await readGoogleConnectorConfig();
+  if (!config) {
+    throw new AppError(
+      "GOOGLE_NOT_CONFIGURED",
+      "Google connector is not configured. Run aitraffic google configure.",
+    );
+  }
+  return {
+    config,
+    provider: new ExternalGoogleDataProvider(config),
+  };
+}
+
+function humanizeKey(key: string): string {
+  return key
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replaceAll("_", " ")
+    .replace(/^./, (character) => character.toUpperCase());
+}
+
+function renderText(result: CommandResult<unknown>): string {
+  const lines = [result.ok ? `✓ ${result.command}` : `✗ ${result.command}`];
+
+  if (result.data !== undefined) {
+    if (
+      typeof result.data === "object" &&
+      result.data !== null &&
+      !Array.isArray(result.data)
+    ) {
+      for (const [key, value] of Object.entries(result.data)) {
+        lines.push(
+          `${humanizeKey(key)}: ${
+            typeof value === "string" ? value : JSON.stringify(value, null, 2)
+          }`,
+        );
+      }
+    } else {
+      lines.push(
+        typeof result.data === "string"
+          ? result.data
+          : JSON.stringify(result.data, null, 2),
+      );
+    }
+  }
+
+  for (const warning of result.warnings) {
+    lines.push(`Warning: ${warning}`);
+  }
+  for (const error of result.errors) {
+    lines.push(`Error [${error.code}]: ${error.message}`);
+  }
+
+  return lines.join("\n");
+}
+
+function emit(result: CommandResult<unknown>, format: OutputFormat): void {
+  const rendered =
+    format === "json" ? JSON.stringify(result) : renderText(result);
+  process.stdout.write(`${rendered}\n`);
+}
+
+async function analyzeCliLogFile(file: string) {
+  try {
+    return await analyzeLogFile(file);
+  } catch (error) {
+    const cause =
+      typeof error === "object" && error !== null && "code" in error
+        ? String(error.code)
+        : "";
+    if (["ENOENT", "EACCES", "EISDIR"].includes(cause)) {
+      throw new AppError(
+        "LOG_FILE_UNREADABLE",
+        `Cannot read log file: ${file}`,
+        2,
+        { path: file, cause },
+      );
+    }
+    throw error;
+  }
+}
+
+async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
+  const [command, ...rest] = args;
+
+  if (!command || command === "help" || command === "--help" || command === "-h") {
+    return success("help", HELP);
+  }
+
+  if (command === "version" || command === "--version" || command === "-v") {
+    assertNoUnknownOptions(rest);
+    return success("version", { version: VERSION });
+  }
+
+  if (command === "init") {
+    const force = takeFlag(rest, "--force");
+    const agent = extractOption(force.remaining, "--agent");
+    const site = extractOption(agent.remaining, "--site");
+    assertNoUnknownOptions(site.remaining);
+    if (site.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${site.remaining[0]}`,
+      );
+    }
+
+    const integration = agent.value ?? "both";
+    if (!["codex", "claude-code", "both"].includes(integration)) {
+      throw new AppError(
+        "INVALID_AGENT",
+        "--agent must be codex, claude-code, or both.",
+      );
+    }
+
+    const data = await initializeProject({
+      force: force.present,
+      agentIntegration: integration as AgentIntegration,
+      ...(site.value !== undefined ? { siteUrl: site.value } : {}),
+    });
+    return success("init", data);
+  }
+
+  if (command === "doctor") {
+    assertNoUnknownOptions(rest);
+    if (rest.length > 0) {
+      throw new AppError("UNEXPECTED_ARGUMENT", `Unexpected argument: ${rest[0]}`);
+    }
+    return success("doctor", await runDoctor());
+  }
+
+  if (command === "schema" && rest[0] === "evidence") {
+    assertNoUnknownOptions(rest.slice(1));
+    if (rest.length > 1) {
+      throw new AppError("UNEXPECTED_ARGUMENT", `Unexpected argument: ${rest[1]}`);
+    }
+    return success("schema evidence", evidenceJsonSchema);
+  }
+
+  if (command === "logs" && rest[0] === "import") {
+    const file = rest[1];
+    if (!file) {
+      throw new AppError(
+        "MISSING_LOG_PATH",
+        "Usage: aitraffic logs import <path>",
+      );
+    }
+    assertNoUnknownOptions(rest.slice(2));
+    if (rest.length > 2) {
+      throw new AppError("UNEXPECTED_ARGUMENT", `Unexpected argument: ${rest[2]}`);
+    }
+    return success("logs import", await analyzeCliLogFile(file), [
+      "Crawler identities are claimed from user-agent strings and are not network-verified.",
+    ]);
+  }
+
+  if (command === "crawlers") {
+    const file = rest[0];
+    if (!file) {
+      throw new AppError(
+        "MISSING_LOG_PATH",
+        "Usage: aitraffic crawlers <path>",
+      );
+    }
+    assertNoUnknownOptions(rest.slice(1));
+    if (rest.length > 1) {
+      throw new AppError("UNEXPECTED_ARGUMENT", `Unexpected argument: ${rest[1]}`);
+    }
+    return success("crawlers", await analyzeCliLogFile(file), [
+      "Crawler identities are claimed from user-agent strings and are not network-verified.",
+    ]);
+  }
+
+  if (command === "classify") {
+    const userAgent = rest.join(" ").trim();
+    if (!userAgent) {
+      throw new AppError(
+        "MISSING_USER_AGENT",
+        "Usage: aitraffic classify <user-agent>",
+      );
+    }
+    return success("classify", classifyUserAgent(userAgent));
+  }
+
+  if (command === "google" && rest[0] === "configure") {
+    const dryRun = takeFlag(rest.slice(1), "--dry-run");
+    const script = extractOption(dryRun.remaining, "--adapter-script");
+    const profile = extractOption(script.remaining, "--profile");
+    const property = extractOption(profile.remaining, "--ga4-property");
+    const site = extractOption(property.remaining, "--gsc-site");
+    assertNoUnknownOptions(site.remaining);
+    if (site.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${site.remaining[0]}`,
+      );
+    }
+    if (!script.value) {
+      throw new AppError(
+        "MISSING_ADAPTER_SCRIPT",
+        "--adapter-script is required.",
+      );
+    }
+    if (!profile.value) {
+      throw new AppError("MISSING_GOOGLE_PROFILE", "--profile is required.");
+    }
+    return success(
+      "google configure",
+      await configureGoogleConnector({
+        scriptPath: script.value,
+        profile: profile.value,
+        ...(property.value !== undefined
+          ? { ga4Property: property.value }
+          : {}),
+        ...(site.value !== undefined ? { gscSite: site.value } : {}),
+        dryRun: dryRun.present,
+      }),
+      dryRun.present
+        ? ["Dry run only; no connector configuration was written."]
+        : [
+            "This file contains adapter selection only. OAuth credentials remain in the external profile store.",
+          ],
+    );
+  }
+
+  if (command === "google" && rest[0] === "status") {
+    assertNoUnknownOptions(rest.slice(1));
+    if (rest.length > 1) {
+      throw new AppError("UNEXPECTED_ARGUMENT", `Unexpected argument: ${rest[1]}`);
+    }
+    const config = await readGoogleConnectorConfig();
+    if (!config) {
+      return success("google status", {
+        configured: false,
+        adapter: null,
+        selected: null,
+      });
+    }
+    const provider = new ExternalGoogleDataProvider(config);
+    const providerStatus = await provider.status();
+    return success("google status", {
+      configured: providerStatus.configured,
+      adapter: config.adapter,
+      profile: config.profile,
+      selected: {
+        ga4Property: config.ga4Property ?? null,
+        gscSite: config.gscSite ?? null,
+      },
+      profileCount: providerStatus.profileCount,
+    });
+  }
+
+  if (command === "google" && rest[0] === "inventory") {
+    assertNoUnknownOptions(rest.slice(1));
+    if (rest.length > 1) {
+      throw new AppError("UNEXPECTED_ARGUMENT", `Unexpected argument: ${rest[1]}`);
+    }
+    const { provider } = await googleProvider();
+    return success("google inventory", await provider.inventory(), [
+      "Inventory is read-only. Select resources explicitly with google configure.",
+    ]);
+  }
+
+  if (command === "ga4" && rest[0] === "report") {
+    const start = extractOption(rest.slice(1), "--start");
+    const end = extractOption(start.remaining, "--end");
+    const dimensions = extractOption(end.remaining, "--dimensions");
+    const metrics = extractOption(dimensions.remaining, "--metrics");
+    const limit = extractOption(metrics.remaining, "--limit");
+    assertNoUnknownOptions(limit.remaining);
+    if (limit.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${limit.remaining[0]}`,
+      );
+    }
+    const { config, provider } = await googleProvider();
+    if (!config.ga4Property) {
+      throw new AppError(
+        "GA4_PROPERTY_NOT_SELECTED",
+        "No GA4 property is selected. Re-run google configure with --ga4-property.",
+      );
+    }
+    const request = {
+      start: start.value ?? "28daysAgo",
+      end: end.value ?? "yesterday",
+      dimensions: commaSeparated(dimensions.value, ["date"]),
+      metrics: commaSeparated(metrics.value, [
+        "totalUsers",
+        "sessions",
+        "screenPageViews",
+      ]),
+      limit: positiveInteger(limit.value, 1_000, "--limit", 100_000),
+    };
+    return success(
+      "ga4 report",
+      {
+        evidenceClass: "observed",
+        source: {
+          connector: "google-analytics-data-api",
+          method: "runReport",
+          profile: config.profile,
+          property: config.ga4Property,
+          collectedAt: new Date().toISOString(),
+        },
+        request,
+        response: await provider.ga4Report(config.ga4Property, request),
+      },
+      [
+        "GA4 results may be affected by thresholding, retention, consent, and property configuration.",
+      ],
+    );
+  }
+
+  if (command === "gsc" && rest[0] === "report") {
+    const start = extractOption(rest.slice(1), "--start");
+    const end = extractOption(start.remaining, "--end");
+    const dimensions = extractOption(end.remaining, "--dimensions");
+    const limit = extractOption(dimensions.remaining, "--limit");
+    assertNoUnknownOptions(limit.remaining);
+    if (limit.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${limit.remaining[0]}`,
+      );
+    }
+    const { config, provider } = await googleProvider();
+    if (!config.gscSite) {
+      throw new AppError(
+        "GSC_SITE_NOT_SELECTED",
+        "No Search Console site is selected. Re-run google configure with --gsc-site.",
+      );
+    }
+    const defaultPeriod = acquisitionPeriods(28).gsc.current;
+    const request = {
+      start: start.value ?? defaultPeriod.start,
+      end: end.value ?? defaultPeriod.end,
+      dimensions: commaSeparated(dimensions.value, ["query"]),
+      limit: positiveInteger(limit.value, 1_000, "--limit", 25_000),
+      dataState: "final" as const,
+    };
+    return success(
+      "gsc report",
+      {
+        evidenceClass: "observed",
+        source: {
+          connector: "google-search-console-api",
+          method: "searchAnalytics.query",
+          profile: config.profile,
+          site: config.gscSite,
+          collectedAt: new Date().toISOString(),
+        },
+        request,
+        response: await provider.gscReport(config.gscSite, request),
+      },
+      [
+        "Search Console may omit anonymized or low-volume queries and uses source-specific reporting dates.",
+      ],
+    );
+  }
+
+  if (command === "report" && rest[0] === "acquisition") {
+    const days = extractOption(rest.slice(1), "--days");
+    assertNoUnknownOptions(days.remaining);
+    if (days.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${days.remaining[0]}`,
+      );
+    }
+    const { config, provider } = await googleProvider();
+    if (!config.ga4Property || !config.gscSite) {
+      throw new AppError(
+        "GOOGLE_RESOURCES_NOT_SELECTED",
+        "Acquisition report requires both --ga4-property and --gsc-site in google configure.",
+      );
+    }
+    return success(
+      "report acquisition",
+      await buildAcquisitionReport(provider, config, {
+        days: positiveInteger(days.value, 28, "--days", 366),
+      }),
+    );
+  }
+
+  throw new AppError("UNKNOWN_COMMAND", `Unknown command: ${command}`);
+}
+
+async function main(): Promise<void> {
+  let command = process.argv.slice(2).join(" ") || "help";
+  let format: OutputFormat = "text";
+
+  try {
+    const parsed = parseGlobalArguments(process.argv.slice(2));
+    format = parsed.format;
+    command = parsed.positional.slice(0, 2).join(" ") || "help";
+
+    if (parsed.positional[0] === "mcp" && parsed.positional[1] === "serve") {
+      if (parsed.positional.length > 2) {
+        throw new AppError(
+          "UNEXPECTED_ARGUMENT",
+          `Unexpected argument: ${parsed.positional[2]}`,
+        );
+      }
+      await serveMcp();
+      return;
+    }
+
+    const result = await runCommand(parsed.positional);
+    emit(result, format);
+  } catch (error) {
+    if (error instanceof AppError) {
+      const details =
+        error.details === undefined ? {} : { details: error.details };
+      emit(
+        failure(command, {
+          code: error.code,
+          message: error.message,
+          ...details,
+        }),
+        format,
+      );
+      process.exitCode = error.exitCode;
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    emit(
+      failure(command, {
+        code: "UNEXPECTED_ERROR",
+        message,
+      }),
+      format,
+    );
+    process.exitCode = 1;
+  }
+}
+
+await main();
