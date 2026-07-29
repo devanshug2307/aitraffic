@@ -53,9 +53,9 @@ claude mcp add --scope project aitraffic -- node "$PWD/dist/src/cli.js" mcp serv
 The alpha can run directly from the public repository:
 
 ```bash
-npx -y github:devanshug2307/aitraffic version
-codex mcp add aitraffic -- npx -y github:devanshug2307/aitraffic mcp serve
-claude mcp add --scope user aitraffic -- npx -y github:devanshug2307/aitraffic mcp serve
+npx -y github:devanshug2307/aitraffic#v0.1.0 version
+codex mcp add aitraffic -- npx -y github:devanshug2307/aitraffic#v0.1.0 mcp serve
+claude mcp add --scope user aitraffic -- npx -y github:devanshug2307/aitraffic#v0.1.0 mcp serve
 ```
 
 The package's `prepare` script builds TypeScript after npm fetches the Git repository.

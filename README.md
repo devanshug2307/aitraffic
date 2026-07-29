@@ -66,8 +66,8 @@ aitraffic mcp serve
 Until the npm package is published, run the public GitHub release directly:
 
 ```bash
-npx -y github:devanshug2307/aitraffic version
-npx -y github:devanshug2307/aitraffic doctor --format json
+npx -y github:devanshug2307/aitraffic#v0.1.0 version
+npx -y github:devanshug2307/aitraffic#v0.1.0 doctor --format json
 ```
 
 ## Terminal contract
@@ -113,7 +113,7 @@ codex mcp get aitraffic
 Or use the public GitHub source without cloning:
 
 ```bash
-codex mcp add aitraffic -- npx -y github:devanshug2307/aitraffic mcp serve
+codex mcp add aitraffic -- npx -y github:devanshug2307/aitraffic#v0.1.0 mcp serve
 ```
 
 Codex should read [AGENTS.md](AGENTS.md) for the repository-specific contract.
@@ -131,7 +131,7 @@ claude mcp add --scope project aitraffic -- node "$PWD/dist/src/cli.js" mcp serv
 Or use the public GitHub source:
 
 ```bash
-claude mcp add --scope user aitraffic -- npx -y github:devanshug2307/aitraffic mcp serve
+claude mcp add --scope user aitraffic -- npx -y github:devanshug2307/aitraffic#v0.1.0 mcp serve
 ```
 
 Claude Code should read [CLAUDE.md](CLAUDE.md), which points to the same engineering and evidence rules.
