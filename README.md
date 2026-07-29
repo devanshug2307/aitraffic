@@ -64,7 +64,7 @@ aitraffic mcp serve
 Pin an exact version for reproducible automation:
 
 ```bash
-npx -y aitraffic@0.1.0 version
+npx -y aitraffic@0.1.1 version
 ```
 
 ## Terminal contract

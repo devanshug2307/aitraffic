@@ -6,9 +6,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { AppError } from "./result.js";
-import { SCHEMA_VERSION } from "./version.js";
+import { SCHEMA_VERSION, VERSION } from "./version.js";
 
 export type AgentIntegration = "codex" | "claude-code" | "both";
 
@@ -40,12 +41,18 @@ function quoteShellArgument(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+export function cliExecutablePath(): string {
+  return fileURLToPath(new URL("../cli.js", import.meta.url));
+}
+
 export function getAgentSetupCommands(cwd = process.cwd()): {
   codex: string;
   claudeCode: string;
 } {
-  const executable = path.join(cwd, "dist", "src", "cli.js");
-  const command = `node ${quoteShellArgument(executable)} mcp serve`;
+  const executable = cliExecutablePath();
+  const command = isWithin(path.resolve(cwd), path.resolve(executable))
+    ? `node ${quoteShellArgument(executable)} mcp serve`
+    : `npx -y aitraffic@${VERSION} mcp serve`;
 
   return {
     codex: `codex mcp add aitraffic -- ${command}`,

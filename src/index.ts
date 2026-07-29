@@ -45,6 +45,7 @@ export {
   type LogParseResult,
 } from "./core/logs.js";
 export {
+  cliExecutablePath,
   getAgentSetupCommands,
   initializeProject,
   projectConfigPath,

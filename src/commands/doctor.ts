@@ -1,11 +1,11 @@
 import { access } from "node:fs/promises";
-import path from "node:path";
 
 import {
   googleConfigPath,
   readGoogleConnectorConfig,
 } from "../connectors/google/config.js";
 import {
+  cliExecutablePath,
   getAgentSetupCommands,
   projectConfigPath,
   readProjectConfig,
@@ -64,14 +64,14 @@ export async function runDoctor(cwd = process.cwd()): Promise<DoctorReport> {
     });
   }
 
-  const builtEntry = path.join(cwd, "dist", "src", "cli.js");
+  const builtEntry = cliExecutablePath();
   const buildExists = await fileExists(builtEntry);
   checks.push({
     id: "build",
-    status: buildExists ? "pass" : "warn",
+    status: buildExists ? "pass" : "fail",
     message: buildExists
-      ? `Built CLI found at ${builtEntry}.`
-      : "Built CLI not found. Run npm run build before configuring MCP.",
+      ? `Active CLI runtime found at ${builtEntry}.`
+      : "Active CLI runtime is missing. Reinstall or rebuild AItraffic.",
   });
 
   try {
