@@ -4,7 +4,7 @@ Open, terminal-first evidence for how search engines and AI systems discover, cr
 
 The project is designed to be directly usable by humans, Codex, Claude Code, CI jobs, and any MCP-compatible agent.
 
-[aitraffic.dev](https://aitraffic.dev) · [GitHub](https://github.com/devanshug2307/aitraffic) · Apache-2.0 · Node.js 20+
+[aitraffic.dev](https://aitraffic.dev) · [npm](https://www.npmjs.com/package/aitraffic) · [GitHub](https://github.com/devanshug2307/aitraffic) · Apache-2.0 · Node.js 20+
 
 ## Current alpha
 
@@ -27,19 +27,16 @@ AItraffic does not yet own a standalone OAuth flow, scheduled collection, or a h
 ## Quick start
 
 ```bash
-npm install
-npm run build
-
-node dist/src/cli.js doctor
-node dist/src/cli.js init --agent both --site https://example.com
-node dist/src/cli.js schema evidence --format json
-node dist/src/cli.js logs import examples/sample-access.log
+npx -y aitraffic@latest doctor
+npx -y aitraffic@latest init --agent both --site https://example.com
+npx -y aitraffic@latest schema evidence --format json
+npx -y aitraffic@latest logs import access.log --format json
 ```
 
 Connect an existing read-only Google profile:
 
 ```bash
-node dist/src/cli.js google configure \
+npx -y aitraffic@latest google configure \
   --adapter-script /absolute/path/to/google-data.mjs \
   --profile work \
   --ga4-property 123456789 \
@@ -47,27 +44,27 @@ node dist/src/cli.js google configure \
   --dry-run
 
 # Review the dry run, then repeat without --dry-run.
-node dist/src/cli.js google status --format json
-node dist/src/cli.js google inventory --format json
-node dist/src/cli.js report acquisition --days 28 --format json
+npx -y aitraffic@latest google status --format json
+npx -y aitraffic@latest google inventory --format json
+npx -y aitraffic@latest report acquisition --days 28 --format json
 ```
 
 The adapter configuration contains only a script path, profile label, and explicit resource IDs. OAuth credentials remain in the external profile store.
 
-After publishing or linking the package locally:
+Install globally if you prefer the shorter executable:
 
 ```bash
+npm install --global aitraffic
 aitraffic doctor
 aitraffic init --agent both
 aitraffic logs import access.log --format json
 aitraffic mcp serve
 ```
 
-Until the npm package is published, run the public GitHub release directly:
+Pin an exact version for reproducible automation:
 
 ```bash
-npx -y github:devanshug2307/aitraffic#v0.1.0 version
-npx -y github:devanshug2307/aitraffic#v0.1.0 doctor --format json
+npx -y aitraffic@0.1.0 version
 ```
 
 ## Terminal contract
@@ -110,10 +107,10 @@ codex mcp add aitraffic -- node "$PWD/dist/src/cli.js" mcp serve
 codex mcp get aitraffic
 ```
 
-Or use the public GitHub source without cloning:
+Or use the published npm package without cloning:
 
 ```bash
-codex mcp add aitraffic -- npx -y github:devanshug2307/aitraffic#v0.1.0 mcp serve
+codex mcp add aitraffic -- npx -y aitraffic@latest mcp serve
 ```
 
 Codex should read [AGENTS.md](AGENTS.md) for the repository-specific contract.
@@ -128,10 +125,10 @@ Or register it explicitly:
 claude mcp add --scope project aitraffic -- node "$PWD/dist/src/cli.js" mcp serve
 ```
 
-Or use the public GitHub source:
+Or use the published npm package:
 
 ```bash
-claude mcp add --scope user aitraffic -- npx -y github:devanshug2307/aitraffic#v0.1.0 mcp serve
+claude mcp add --scope user aitraffic -- npx -y aitraffic@latest mcp serve
 ```
 
 Claude Code should read [CLAUDE.md](CLAUDE.md), which points to the same engineering and evidence rules.
@@ -183,6 +180,8 @@ The first live connector dogfood is documented in the
 ## Development
 
 ```bash
+npm install
+npm run build
 npm run typecheck
 npm test
 npm run check
