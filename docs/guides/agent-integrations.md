@@ -48,7 +48,19 @@ Explicit registration is also supported:
 claude mcp add --scope project aitraffic -- node "$PWD/dist/src/cli.js" mcp serve
 ```
 
-## Published package
+## Public GitHub source
+
+The alpha can run directly from the public repository:
+
+```bash
+npx -y github:devanshug2307/aitraffic version
+codex mcp add aitraffic -- npx -y github:devanshug2307/aitraffic mcp serve
+claude mcp add --scope user aitraffic -- npx -y github:devanshug2307/aitraffic mcp serve
+```
+
+The package's `prepare` script builds TypeScript after npm fetches the Git repository.
+
+## Published npm package
 
 After the package is published, a user-level installation can use:
 

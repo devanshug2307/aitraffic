@@ -63,6 +63,13 @@ aitraffic logs import access.log --format json
 aitraffic mcp serve
 ```
 
+Until the npm package is published, run the public GitHub release directly:
+
+```bash
+npx -y github:devanshug2307/aitraffic version
+npx -y github:devanshug2307/aitraffic doctor --format json
+```
+
 ## Terminal contract
 
 - Human-readable output is the default in a TTY.
@@ -103,6 +110,12 @@ codex mcp add aitraffic -- node "$PWD/dist/src/cli.js" mcp serve
 codex mcp get aitraffic
 ```
 
+Or use the public GitHub source without cloning:
+
+```bash
+codex mcp add aitraffic -- npx -y github:devanshug2307/aitraffic mcp serve
+```
+
 Codex should read [AGENTS.md](AGENTS.md) for the repository-specific contract.
 
 ## Claude Code
@@ -113,6 +126,12 @@ Or register it explicitly:
 
 ```bash
 claude mcp add --scope project aitraffic -- node "$PWD/dist/src/cli.js" mcp serve
+```
+
+Or use the public GitHub source:
+
+```bash
+claude mcp add --scope user aitraffic -- npx -y github:devanshug2307/aitraffic mcp serve
 ```
 
 Claude Code should read [CLAUDE.md](CLAUDE.md), which points to the same engineering and evidence rules.

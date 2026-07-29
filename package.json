@@ -38,6 +38,7 @@
     "check": "npm run typecheck && npm test",
     "cli": "node dist/src/cli.js",
     "mcp": "node dist/src/cli.js mcp serve",
+    "prepare": "npm run build",
     "prepack": "npm run check"
   },
   "engines": {
