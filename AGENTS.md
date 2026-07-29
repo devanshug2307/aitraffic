@@ -56,6 +56,6 @@ node dist/src/cli.js logs import examples/sample-access.log --format json
 
 ## Scope
 
-The current alpha implements typed, read-only GA4 and GSC access through an explicitly configured external local profile. It does not claim standalone OAuth ownership, prompt-browser collection, scheduled collection, or hosted synchronization. Add those behind explicit connectors and capability checks.
+The current alpha implements typed, read-only GA4 and GSC access through native local OAuth or an explicitly configured external local profile. Native secrets stay in the operating-system credential store; OAuth login and revoke remain human-run CLI actions and must never become MCP tools. The project does not claim prompt-browser collection, scheduled collection, or hosted synchronization. Add those behind explicit connectors and capability checks.
 
 Read [docs/research/06-data-integrations-and-architecture.md](docs/research/06-data-integrations-and-architecture.md) before changing the evidence model.

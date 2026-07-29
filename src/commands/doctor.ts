@@ -4,6 +4,7 @@ import {
   googleConfigPath,
   readGoogleConnectorConfig,
 } from "../connectors/google/config.js";
+import { createGoogleDataProvider } from "../connectors/google/provider.js";
 import {
   cliExecutablePath,
   getAgentSetupCommands,
@@ -81,22 +82,38 @@ export async function runDoctor(cwd = process.cwd()): Promise<DoctorReport> {
         id: "google",
         status: "warn",
         message:
-          "Google connector is not configured. External OAuth profiles are never imported automatically.",
+          "Google connector is not configured. Run google select for native OAuth or google configure for an external adapter.",
       });
     } else {
-      const scriptExists = await fileExists(googleConfig.scriptPath);
       const resourcesSelected = Boolean(
         googleConfig.ga4Property && googleConfig.gscSite,
       );
-      checks.push({
-        id: "google",
-        status: scriptExists && resourcesSelected ? "pass" : "warn",
-        message: scriptExists
-          ? resourcesSelected
-            ? `Read-only Google adapter is configured at ${googleConfigPath(cwd)} with explicit GA4 and Search Console selections.`
-            : "Google adapter is configured, but both a GA4 property and Search Console site are needed for acquisition reports."
-          : "Google adapter configuration exists, but its external script is not readable.",
-      });
+      if (googleConfig.adapter === "local-oauth") {
+        const providerStatus = await (
+          await createGoogleDataProvider(googleConfig)
+        ).status();
+        checks.push({
+          id: "google",
+          status:
+            providerStatus.configured && resourcesSelected ? "pass" : "warn",
+          message: !providerStatus.configured
+            ? `Native Google profile ${googleConfig.profile} is selected but not connected. Run auth google status or login.`
+            : resourcesSelected
+            ? `Native read-only Google OAuth is selected at ${googleConfigPath(cwd)} with explicit GA4 and Search Console resources.`
+            : "Native Google OAuth is selected, but both a GA4 property and Search Console site are needed for acquisition reports.",
+        });
+      } else {
+        const scriptExists = await fileExists(googleConfig.scriptPath);
+        checks.push({
+          id: "google",
+          status: scriptExists && resourcesSelected ? "pass" : "warn",
+          message: scriptExists
+            ? resourcesSelected
+              ? `Read-only Google adapter is configured at ${googleConfigPath(cwd)} with explicit GA4 and Search Console selections.`
+              : "Google adapter is configured, but both a GA4 property and Search Console site are needed for acquisition reports."
+            : "Google adapter configuration exists, but its external script is not readable.",
+        });
+      }
     }
   } catch (error) {
     checks.push({

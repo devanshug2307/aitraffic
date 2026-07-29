@@ -61,7 +61,7 @@ claude mcp add --scope user aitraffic -- npx -y aitraffic@latest mcp serve
 Pin a version in CI or another reproducible environment:
 
 ```bash
-npx -y aitraffic@0.1.1 version
+npx -y aitraffic@0.2.0 version
 ```
 
 The GitHub release remains an available fallback:

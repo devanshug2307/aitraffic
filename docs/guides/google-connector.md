@@ -1,44 +1,109 @@
-# Google Connector Alpha
+# Google connector
 
-## What is implemented
+AItraffic supports two compatible read-only providers:
 
-AItraffic can use an existing local, read-only Google profile through an explicit external command adapter. The adapter returns JSON for:
+1. **Native local OAuth** — the packaged CLI owns the browser consent flow and calls GA4 and Search Console directly.
+2. **External command adapter** — an existing TrafficClaw or other local profile owns OAuth and returns typed JSON to AItraffic.
 
-- connection status;
-- GA4 property and Search Console site inventory;
-- GA4 `runReport`;
-- Search Console Search Analytics queries.
+Both providers implement the same `GoogleDataProvider` contract, so GA4, Search Console, acquisition reports, and MCP tools keep the same output shape.
 
-AItraffic adds typed command results, explicit resource selection, provenance, equal-period comparison, AI-referral normalization, and deterministic opportunity rules.
+## Native OAuth: Google Cloud setup
 
-This is the first bridge from TrafficClaw's proven Google behavior into the open CLI. It is not yet a standalone OAuth implementation or a hosted TrafficClaw API.
+In a Google Cloud project:
 
-## Security boundary
+1. Enable the **Google Analytics Data API**, **Google Analytics Admin API**, and **Google Search Console API**.
+2. Configure the Google OAuth consent screen. If the app is in testing, add the Google accounts that will connect as test users.
+3. Create an OAuth 2.0 client with application type **Web application**.
+4. Add this authorized redirect URI exactly:
 
-The external profile owns OAuth consent, token refresh, and private token storage. AItraffic stores only:
+   ```text
+   http://localhost:3000/api/auth/callback/google
+   ```
 
-```json
-{
-  "schemaVersion": "0.1.0",
-  "adapter": "external-command",
-  "scriptPath": "/absolute/path/to/google-data.mjs",
-  "profile": "work",
-  "ga4Property": "123456789",
-  "gscSite": "sc-domain:example.com"
-}
+You can choose another loopback port or path, but the Google Cloud value and `GOOGLE_REDIRECT_URI` must be identical. AItraffic accepts only an HTTP loopback URI with an explicit port, no query, and no fragment.
+
+Google’s references:
+
+- [OAuth 2.0 for web server applications](https://developers.google.com/identity/protocols/oauth2/web-server)
+- [Google Analytics Data API quickstart](https://developers.google.com/analytics/devguides/reporting/data/v1/quickstart)
+- [Search Console OAuth authorization](https://developers.google.com/webmaster-tools/v1/how-tos/authorizing)
+
+The Google account completing consent must already have access to the relevant GA4 property and Search Console site.
+
+Google Cloud projects whose external consent screen remains in **Testing**
+typically receive refresh tokens that expire after seven days for these data
+scopes. Add test users while developing, then follow Google’s production and
+verification requirements before distributing one shared OAuth client. BYO
+client users control their own project and consent configuration.
+
+## Store the OAuth client securely
+
+Create a private file outside source control:
+
+```dotenv
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/callback/google
 ```
 
-The local file is `.aitraffic/google.json`, is mode `0600`, and is ignored by Git. It must never contain access tokens, refresh tokens, client secrets, authorization codes, cookies, or passwords.
-
-The adapter is launched with `execFile` through the current Node executable. No shell is used. Child stdout must contain one JSON document. On failure, AItraffic reports a structured error without echoing child stdout or stderr.
-
-## Configure
-
-First review a dry run:
+Import it:
 
 ```bash
-aitraffic google configure \
-  --adapter-script /absolute/path/to/google-data.mjs \
+npx -y aitraffic@latest auth google configure \
+  --from-env-file /absolute/path/to/.env.google \
+  --format json
+```
+
+AItraffic copies the client configuration into macOS Keychain, Windows Credential Manager, or Linux Secret Service through native bindings. It rejects command-line fallback, file, and null credential backends. The client secret is never accepted as a CLI argument, written to `.aitraffic/google.json`, or returned in output.
+
+Delete the source environment file afterward if you do not need it for recovery. The file remains under your control; AItraffic does not modify it.
+
+## Connect named Google accounts
+
+Run:
+
+```bash
+npx -y aitraffic@latest auth google login --profile work
+```
+
+AItraffic starts the exact loopback callback, generates random state and a PKCE challenge, and opens Google in the browser. You personally choose the Google account and approve consent. The CLI requests only:
+
+```text
+openid
+email
+profile
+https://www.googleapis.com/auth/analytics.readonly
+https://www.googleapis.com/auth/webmasters.readonly
+```
+
+The access and refresh tokens remain in the operating-system credential store. They are not printed and are not exposed through MCP.
+
+Use a second label to connect another Google account:
+
+```bash
+npx -y aitraffic@latest auth google login --profile client-two
+npx -y aitraffic@latest auth google status --format json
+npx -y aitraffic@latest auth google status --profile client-two --format json
+```
+
+Profile labels contain letters, numbers, underscores, or hyphens and are normalized to lowercase. AItraffic does not return account email addresses in agent-facing status results.
+
+## Discover and select resources
+
+Inventory a connected profile:
+
+```bash
+npx -y aitraffic@latest google inventory \
+  --profile work \
+  --format json
+```
+
+This lists the GA4 properties and Search Console sites the connected Google account can access. AItraffic never silently chooses the first result.
+
+Create a project-local selection:
+
+```bash
+npx -y aitraffic@latest google select \
   --profile work \
   --ga4-property 123456789 \
   --gsc-site sc-domain:example.com \
@@ -46,21 +111,26 @@ aitraffic google configure \
   --format json
 ```
 
-Then repeat without `--dry-run`. The command validates that the adapter script is readable, normalizes the profile label, strips an optional `properties/` prefix from the GA4 ID, and writes the local selection atomically.
+Review the dry run, then repeat without `--dry-run`. The resulting `.aitraffic/google.json` contains labels only:
 
-Inventory is always explicit:
-
-```bash
-aitraffic google status --format json
-aitraffic google inventory --format json
+```json
+{
+  "schemaVersion": "0.1.0",
+  "adapter": "local-oauth",
+  "profile": "work",
+  "ga4Property": "123456789",
+  "gscSite": "sc-domain:example.com"
+}
 ```
 
-AItraffic never silently selects the first property or site.
+The file is mode `0600` and ignored by Git.
 
 ## Read-only reports
 
 ```bash
-aitraffic ga4 report \
+npx -y aitraffic@latest google status --format json
+
+npx -y aitraffic@latest ga4 report \
   --start 28daysAgo \
   --end yesterday \
   --dimensions sessionSource,sessionMedium,landingPagePlusQueryString \
@@ -68,34 +138,79 @@ aitraffic ga4 report \
   --limit 10000 \
   --format json
 
-aitraffic gsc report \
+npx -y aitraffic@latest gsc report \
   --start 2026-06-30 \
   --end 2026-07-27 \
   --dimensions query,page \
   --limit 25000 \
   --format json
+
+npx -y aitraffic@latest report acquisition --days 28 --format json
 ```
 
-The unified report uses yesterday as the GA4 end date and three days ago as the Search Console end date. It compares equal inclusive periods:
-
-```bash
-aitraffic report acquisition --days 28 --format json
-```
-
-It reports:
+The unified report uses yesterday as the GA4 end date and three days ago as the Search Console end date. It compares equal inclusive periods and reports:
 
 - all observable GA4 traffic;
-- traffic classified by GA4's native `AI Assistants` channel or a disclosed source-domain registry;
+- traffic classified by GA4’s native `AI Assistants` channel or a disclosed source-domain registry;
 - AI sessions, users, engagement, key events, revenue, sources, and landing pages;
 - Search Console clicks, impressions, CTR, and impression-weighted position;
 - current-versus-previous changes;
 - deterministic query/page opportunities for returned rows in positions 4–20 with at least 10 impressions.
 
-The report does not claim that a Search Console query caused a GA4 session, that a crawler visit created a citation, or that an AI referral caused revenue.
+The report does not claim that a Search Console query caused a GA4 session, that a crawler visit created a citation, or that an AI referral caused revenue. Search Console can omit anonymized or low-volume queries, and GA4 can be affected by consent, thresholding, retention, and property setup.
 
-## Adapter contract
+## Revoke a profile
 
-An adapter must accept these commands:
+Review:
+
+```bash
+npx -y aitraffic@latest auth google revoke \
+  --profile work \
+  --dry-run \
+  --format json
+```
+
+Then revoke:
+
+```bash
+npx -y aitraffic@latest auth google revoke \
+  --profile work \
+  --format json
+```
+
+Google revocation removes the OAuth grant for that Google account across every client in the same Google Cloud project. After Google confirms success, AItraffic deletes the named profile and aliases it can safely identify as the same Google account and OAuth client. Other Google accounts and profiles bound to a different configured client are left alone. Project resource selection is kept so reconnecting does not destroy project configuration.
+
+If Google is unreachable or the token is already unusable, explicitly forget
+the credential without claiming remote revocation:
+
+```bash
+npx -y aitraffic@latest auth google revoke \
+  --profile work \
+  --local-only \
+  --format json
+```
+
+AItraffic also treats Google’s HTTP 400 response as an already-invalid token
+and removes the local credential. Other revocation failures retain it so the
+operation can be retried.
+
+## External TrafficClaw adapter
+
+The existing external adapter remains supported:
+
+```bash
+npx -y aitraffic@latest google configure \
+  --adapter-script /absolute/path/to/google-data.mjs \
+  --profile trafficclaw \
+  --ga4-property 123456789 \
+  --gsc-site sc-domain:example.com \
+  --dry-run \
+  --format json
+```
+
+Review the dry run, then repeat without `--dry-run`. In this mode TrafficClaw owns consent, token refresh, and credential persistence. AItraffic launches the adapter using the current Node executable and a fixed argument array, never a shell.
+
+The adapter must accept:
 
 ```text
 status
@@ -104,23 +219,8 @@ ga4 --profile NAME --property ID --start DATE --end DATE --dimensions CSV|none -
 gsc --profile NAME --site SITE --start YYYY-MM-DD --end YYYY-MM-DD --dimensions CSV --limit N --offset N --type web --data-state final
 ```
 
-It must:
+It must write one JSON value to stdout, put diagnostics on stderr, return non-zero on failure, use read-only Google scopes, keep raw credentials out of responses, and require explicit property/site identifiers.
 
-- write exactly one JSON value to stdout;
-- write diagnostics only to stderr;
-- return non-zero on failure;
-- use read-only Google scopes;
-- keep raw credentials outside its responses;
-- require explicit property and site identifiers.
+## MCP boundary
 
-## Next connector milestone
-
-The next open-source milestone is a packaged standalone local OAuth provider with:
-
-- PKCE and state validation;
-- incremental read-only consent;
-- OS credential-store or authenticated-encryption persistence;
-- named-profile status and revocation;
-- the same `GoogleDataProvider` interface, so CLI and MCP contracts do not change.
-
-TrafficClaw hosted mode should remain a separate provider: AItraffic receives short-lived capability access and typed report results, while refresh tokens remain in TrafficClaw's encrypted server-side vault.
+The MCP server exposes connection status, resource inventory, read-only reports, and the acquisition analysis. It deliberately does not expose OAuth configure, login, or revoke. Those commands require an informed person at the terminal and must not be delegated to an agent.

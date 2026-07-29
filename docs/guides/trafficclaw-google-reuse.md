@@ -1,5 +1,14 @@
 # TrafficClaw Google Connector Reuse Plan
 
+## Implementation status
+
+Milestones 1 and the first acquisition report in milestone 2 shipped in
+AItraffic 0.2.0. Native OAuth, named profiles, OS credential storage, direct
+GA4/GSC inventory and reports, refresh/revoke, explicit project selection, and
+the compatible external command adapter are implemented. Hosted TrafficClaw
+sessions, scheduled history, realtime GA4, URL Inspection, and autonomous
+actions remain future work.
+
 ## Decision
 
 Reuse TrafficClaw's proven Google integration behavior, but extract it into
@@ -80,7 +89,7 @@ Every connector result must identify:
 - sampling, thresholding, freshness, and incomplete-data limitations;
 - collection time and connector version.
 
-## Proposed terminal surface
+## Terminal surface
 
 ```text
 aitraffic auth google configure --from-env-file /absolute/path/.env
@@ -93,8 +102,9 @@ aitraffic connect trafficclaw status
 aitraffic connect trafficclaw revoke
 
 aitraffic google inventory --profile work
-aitraffic project select --ga4-property 123456789
-aitraffic project select --gsc-site sc-domain:example.com
+aitraffic google select --profile work \
+  --ga4-property 123456789 \
+  --gsc-site sc-domain:example.com
 
 aitraffic ga4 report --start 28daysAgo --end yesterday \
   --dimensions date --metrics sessions,totalUsers,keyEvents
@@ -110,15 +120,15 @@ call.
 
 ## MCP surface
 
-Initial read-only tools:
+Implemented read-only tools:
 
 - `google_connection_status`
 - `list_google_resources`
 - `run_ga4_report`
-- `run_ga4_realtime_report`
 - `run_gsc_report`
-- `inspect_gsc_url`
-- `compare_search_and_analytics`
+- `analyze_ai_acquisition`
+
+Planned tools include `run_ga4_realtime_report` and `inspect_gsc_url`.
 
 OAuth login and revocation should remain CLI or browser-mediated operations.
 The MCP server may report that consent is required, but it must not receive a

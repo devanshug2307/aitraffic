@@ -8,8 +8,21 @@ import {
 import {
   configureGoogleConnector,
   readGoogleConnectorConfig,
+  selectLocalGoogleConnector,
+  validateGoogleProfile,
 } from "./connectors/google/config.js";
-import { ExternalGoogleDataProvider } from "./connectors/google/externalProvider.js";
+import {
+  configureGoogleOAuthClient,
+  getGoogleOAuthStatus,
+  loginGoogleOAuthProfile,
+  revokeGoogleOAuthProfile,
+} from "./connectors/google/oauth.js";
+import { createGoogleDataProvider } from "./connectors/google/provider.js";
+import type {
+  GoogleConnectorConfig,
+  GoogleDataProvider,
+} from "./connectors/google/types.js";
+import { createSystemGoogleVault } from "./connectors/google/vault.js";
 import { classifyUserAgent } from "./core/agentRegistry.js";
 import { evidenceJsonSchema } from "./core/evidence.js";
 import { analyzeLogFile } from "./core/logs.js";
@@ -42,9 +55,14 @@ Usage:
   aitraffic logs import <path>
   aitraffic crawlers <path>
   aitraffic classify <user-agent>
+  aitraffic auth google configure --from-env-file PATH
+  aitraffic auth google login --profile NAME
+  aitraffic auth google status [--profile NAME]
+  aitraffic auth google revoke --profile NAME [--dry-run] [--local-only]
   aitraffic google configure --adapter-script PATH --profile NAME [--ga4-property ID] [--gsc-site SITE] [--dry-run]
+  aitraffic google select --profile NAME [--ga4-property ID] [--gsc-site SITE] [--dry-run]
   aitraffic google status
-  aitraffic google inventory
+  aitraffic google inventory [--profile NAME]
   aitraffic ga4 report [--start DATE] [--end DATE] [--dimensions CSV] [--metrics CSV] [--limit N]
   aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N]
   aitraffic report acquisition [--days N]
@@ -191,17 +209,31 @@ function positiveInteger(
   return parsed;
 }
 
-async function googleProvider() {
+async function googleProvider(profile?: string): Promise<{
+  config: GoogleConnectorConfig;
+  provider: GoogleDataProvider;
+}> {
+  if (profile !== undefined) {
+    const config = {
+      schemaVersion: "0.1.0" as const,
+      adapter: "local-oauth" as const,
+      profile: validateGoogleProfile(profile),
+    };
+    return {
+      config,
+      provider: await createGoogleDataProvider(config),
+    };
+  }
   const config = await readGoogleConnectorConfig();
   if (!config) {
     throw new AppError(
       "GOOGLE_NOT_CONFIGURED",
-      "Google connector is not configured. Run aitraffic google configure.",
+      "Google connector is not configured. Run aitraffic google select or aitraffic google configure.",
     );
   }
   return {
     config,
-    provider: new ExternalGoogleDataProvider(config),
+    provider: await createGoogleDataProvider(config),
   };
 }
 
@@ -374,6 +406,111 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
     return success("classify", classifyUserAgent(userAgent));
   }
 
+  if (
+    command === "auth" &&
+    rest[0] === "google" &&
+    rest[1] === "configure"
+  ) {
+    const envFile = extractOption(rest.slice(2), "--from-env-file");
+    assertNoUnknownOptions(envFile.remaining);
+    if (envFile.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${envFile.remaining[0]}`,
+      );
+    }
+    if (!envFile.value) {
+      throw new AppError(
+        "MISSING_GOOGLE_ENV_FILE",
+        "--from-env-file is required. OAuth client secrets are never accepted as command-line values.",
+      );
+    }
+    const vault = await createSystemGoogleVault();
+    return success(
+      "auth google configure",
+      await configureGoogleOAuthClient({
+        envFile: envFile.value,
+        vault,
+      }),
+      [
+        "The OAuth client is stored in the operating-system credential store, not the project.",
+      ],
+    );
+  }
+
+  if (command === "auth" && rest[0] === "google" && rest[1] === "login") {
+    const profile = extractOption(rest.slice(2), "--profile");
+    assertNoUnknownOptions(profile.remaining);
+    if (profile.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${profile.remaining[0]}`,
+      );
+    }
+    if (!profile.value) {
+      throw new AppError("MISSING_GOOGLE_PROFILE", "--profile is required.");
+    }
+    const vault = await createSystemGoogleVault();
+    return success(
+      "auth google login",
+      await loginGoogleOAuthProfile(profile.value, vault, {
+        onInstruction: (message) => console.error(message),
+      }),
+      [
+        "Only read-only Analytics, Search Console, and identity scopes were requested.",
+      ],
+    );
+  }
+
+  if (command === "auth" && rest[0] === "google" && rest[1] === "status") {
+    const profile = extractOption(rest.slice(2), "--profile");
+    assertNoUnknownOptions(profile.remaining);
+    if (profile.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${profile.remaining[0]}`,
+      );
+    }
+    const vault = await createSystemGoogleVault();
+    return success(
+      "auth google status",
+      await getGoogleOAuthStatus(vault, profile.value),
+    );
+  }
+
+  if (command === "auth" && rest[0] === "google" && rest[1] === "revoke") {
+    const dryRun = takeFlag(rest.slice(2), "--dry-run");
+    const localOnly = takeFlag(dryRun.remaining, "--local-only");
+    const profile = extractOption(localOnly.remaining, "--profile");
+    assertNoUnknownOptions(profile.remaining);
+    if (profile.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${profile.remaining[0]}`,
+      );
+    }
+    if (!profile.value) {
+      throw new AppError("MISSING_GOOGLE_PROFILE", "--profile is required.");
+    }
+    const vault = await createSystemGoogleVault();
+    return success(
+      "auth google revoke",
+      await revokeGoogleOAuthProfile({
+        profile: profile.value,
+        vault,
+        dryRun: dryRun.present,
+        localOnly: localOnly.present,
+      }),
+      dryRun.present
+        ? ["Dry run only; no Google token or local profile was changed."]
+        : localOnly.present
+          ? [
+              "Local-only deletion does not revoke the Google grant. Use this only for an already-invalid credential or when Google is unreachable.",
+            ]
+          : [],
+    );
+  }
+
   if (command === "google" && rest[0] === "configure") {
     const dryRun = takeFlag(rest.slice(1), "--dry-run");
     const script = extractOption(dryRun.remaining, "--adapter-script");
@@ -415,6 +552,39 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
     );
   }
 
+  if (command === "google" && rest[0] === "select") {
+    const dryRun = takeFlag(rest.slice(1), "--dry-run");
+    const profile = extractOption(dryRun.remaining, "--profile");
+    const property = extractOption(profile.remaining, "--ga4-property");
+    const site = extractOption(property.remaining, "--gsc-site");
+    assertNoUnknownOptions(site.remaining);
+    if (site.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${site.remaining[0]}`,
+      );
+    }
+    if (!profile.value) {
+      throw new AppError("MISSING_GOOGLE_PROFILE", "--profile is required.");
+    }
+    return success(
+      "google select",
+      await selectLocalGoogleConnector({
+        profile: profile.value,
+        ...(property.value !== undefined
+          ? { ga4Property: property.value }
+          : {}),
+        ...(site.value !== undefined ? { gscSite: site.value } : {}),
+        dryRun: dryRun.present,
+      }),
+      dryRun.present
+        ? ["Dry run only; no project selection was written."]
+        : [
+            "This project file contains profile and resource labels only; OAuth credentials remain in the operating-system credential store.",
+          ],
+    );
+  }
+
   if (command === "google" && rest[0] === "status") {
     assertNoUnknownOptions(rest.slice(1));
     if (rest.length > 1) {
@@ -428,7 +598,7 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
         selected: null,
       });
     }
-    const provider = new ExternalGoogleDataProvider(config);
+    const provider = await createGoogleDataProvider(config);
     const providerStatus = await provider.status();
     return success("google status", {
       configured: providerStatus.configured,
@@ -443,13 +613,17 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
   }
 
   if (command === "google" && rest[0] === "inventory") {
-    assertNoUnknownOptions(rest.slice(1));
-    if (rest.length > 1) {
-      throw new AppError("UNEXPECTED_ARGUMENT", `Unexpected argument: ${rest[1]}`);
+    const profile = extractOption(rest.slice(1), "--profile");
+    assertNoUnknownOptions(profile.remaining);
+    if (profile.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${profile.remaining[0]}`,
+      );
     }
-    const { provider } = await googleProvider();
+    const { provider } = await googleProvider(profile.value);
     return success("google inventory", await provider.inventory(), [
-      "Inventory is read-only. Select resources explicitly with google configure.",
+      "Inventory is read-only. Select resources explicitly with google select or google configure.",
     ]);
   }
 
@@ -470,7 +644,7 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
     if (!config.ga4Property) {
       throw new AppError(
         "GA4_PROPERTY_NOT_SELECTED",
-        "No GA4 property is selected. Re-run google configure with --ga4-property.",
+        "No GA4 property is selected. Re-run google select or google configure with --ga4-property.",
       );
     }
     const request = {
@@ -520,7 +694,7 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
     if (!config.gscSite) {
       throw new AppError(
         "GSC_SITE_NOT_SELECTED",
-        "No Search Console site is selected. Re-run google configure with --gsc-site.",
+        "No Search Console site is selected. Re-run google select or google configure with --gsc-site.",
       );
     }
     const defaultPeriod = acquisitionPeriods(28).gsc.current;
@@ -564,7 +738,7 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
     if (!config.ga4Property || !config.gscSite) {
       throw new AppError(
         "GOOGLE_RESOURCES_NOT_SELECTED",
-        "Acquisition report requires both --ga4-property and --gsc-site in google configure.",
+        "Acquisition report requires both --ga4-property and --gsc-site in the project Google selection.",
       );
     }
     return success(

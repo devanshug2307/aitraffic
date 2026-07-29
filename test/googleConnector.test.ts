@@ -12,6 +12,7 @@ import {
 import {
   configureGoogleConnector,
   readGoogleConnectorConfig,
+  selectLocalGoogleConnector,
 } from "../src/connectors/google/config.js";
 import type {
   Ga4ReportRequest,
@@ -42,6 +43,30 @@ test("configures an external Google adapter without credentials", async () => {
   const stored = await readFile(result.configPath, "utf8");
   assert.equal(stored.includes("accessToken"), false);
   assert.equal(stored.includes("refreshToken"), false);
+});
+
+test("selects a native OAuth profile without storing credentials", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "aitraffic-google-"));
+  const result = await selectLocalGoogleConnector({
+    cwd: directory,
+    profile: "Personal",
+    ga4Property: "properties/987654",
+    gscSite: "https://example.com/",
+  });
+
+  assert.deepEqual(result.config, {
+    schemaVersion: "0.1.0",
+    adapter: "local-oauth",
+    profile: "personal",
+    ga4Property: "987654",
+    gscSite: "https://example.com/",
+  });
+  assert.deepEqual(await readGoogleConnectorConfig(directory), result.config);
+
+  const stored = await readFile(result.configPath, "utf8");
+  assert.equal(stored.includes("accessToken"), false);
+  assert.equal(stored.includes("refreshToken"), false);
+  assert.equal(stored.includes("clientSecret"), false);
 });
 
 test("uses equal inclusive periods and a Search Console freshness lag", () => {

@@ -1,11 +1,24 @@
-export interface GoogleConnectorConfig {
+export interface GoogleConnectorSelection {
   schemaVersion: "0.1.0";
-  adapter: "external-command";
-  scriptPath: string;
   profile: string;
   ga4Property?: string;
   gscSite?: string;
 }
+
+export interface ExternalGoogleConnectorConfig
+  extends GoogleConnectorSelection {
+  adapter: "external-command";
+  scriptPath: string;
+}
+
+export interface LocalGoogleConnectorConfig
+  extends GoogleConnectorSelection {
+  adapter: "local-oauth";
+}
+
+export type GoogleConnectorConfig =
+  | ExternalGoogleConnectorConfig
+  | LocalGoogleConnectorConfig;
 
 export interface GoogleConnectorStatus {
   configured: boolean;

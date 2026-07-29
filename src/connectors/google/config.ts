@@ -10,7 +10,11 @@ import path from "node:path";
 
 import { PROJECT_DIRECTORY } from "../../core/project.js";
 import { AppError } from "../../core/result.js";
-import type { GoogleConnectorConfig } from "./types.js";
+import type {
+  ExternalGoogleConnectorConfig,
+  GoogleConnectorConfig,
+  LocalGoogleConnectorConfig,
+} from "./types.js";
 
 export const GOOGLE_CONFIG_FILE = "google.json";
 
@@ -32,7 +36,9 @@ export function validateGoogleProfile(profile: string): string {
   return profile.toLowerCase();
 }
 
-function normalizeProperty(property: string | undefined): string | undefined {
+export function normalizeGa4Property(
+  property: string | undefined,
+): string | undefined {
   if (property === undefined) {
     return undefined;
   }
@@ -44,6 +50,32 @@ function normalizeProperty(property: string | undefined): string | undefined {
     );
   }
   return normalized;
+}
+
+async function writeGoogleConnectorConfig(
+  cwd: string,
+  config: GoogleConnectorConfig,
+  dryRun: boolean,
+): Promise<{
+  configPath: string;
+  config: GoogleConnectorConfig;
+  written: boolean;
+}> {
+  const configPath = googleConfigPath(cwd);
+  if (dryRun) {
+    return { configPath, config, written: false };
+  }
+
+  await mkdir(path.dirname(configPath), { recursive: true, mode: 0o700 });
+  const temporary = `${configPath}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  await chmod(temporary, 0o600);
+  await rename(temporary, configPath);
+  await chmod(configPath, 0o600);
+  return { configPath, config, written: true };
 }
 
 export async function configureGoogleConnector(options: {
@@ -69,13 +101,13 @@ export async function configureGoogleConnector(options: {
     );
   }
 
-  const config: GoogleConnectorConfig = {
+  const config: ExternalGoogleConnectorConfig = {
     schemaVersion: "0.1.0",
     adapter: "external-command",
     scriptPath,
     profile: validateGoogleProfile(options.profile),
   };
-  const ga4Property = normalizeProperty(options.ga4Property);
+  const ga4Property = normalizeGa4Property(options.ga4Property);
   if (ga4Property !== undefined) {
     config.ga4Property = ga4Property;
   }
@@ -83,21 +115,42 @@ export async function configureGoogleConnector(options: {
     config.gscSite = options.gscSite;
   }
 
-  const configPath = googleConfigPath(cwd);
-  if (options.dryRun) {
-    return { configPath, config, written: false };
-  }
+  return writeGoogleConnectorConfig(cwd, config, options.dryRun === true);
+}
 
-  await mkdir(path.dirname(configPath), { recursive: true, mode: 0o700 });
-  const temporary = `${configPath}.${process.pid}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-  await chmod(temporary, 0o600);
-  await rename(temporary, configPath);
-  await chmod(configPath, 0o600);
-  return { configPath, config, written: true };
+export async function selectLocalGoogleConnector(options: {
+  cwd?: string;
+  profile: string;
+  ga4Property?: string;
+  gscSite?: string;
+  dryRun?: boolean;
+}): Promise<{
+  configPath: string;
+  config: LocalGoogleConnectorConfig;
+  written: boolean;
+}> {
+  const config: LocalGoogleConnectorConfig = {
+    schemaVersion: "0.1.0",
+    adapter: "local-oauth",
+    profile: validateGoogleProfile(options.profile),
+  };
+  const ga4Property = normalizeGa4Property(options.ga4Property);
+  if (ga4Property !== undefined) {
+    config.ga4Property = ga4Property;
+  }
+  if (options.gscSite !== undefined) {
+    config.gscSite = options.gscSite;
+  }
+  const result = await writeGoogleConnectorConfig(
+    options.cwd ?? process.cwd(),
+    config,
+    options.dryRun === true,
+  );
+  return {
+    configPath: result.configPath,
+    config,
+    written: result.written,
+  };
 }
 
 export async function readGoogleConnectorConfig(
@@ -123,9 +176,7 @@ export async function readGoogleConnectorConfig(
   if (
     !isRecord(parsed) ||
     parsed.schemaVersion !== "0.1.0" ||
-    parsed.adapter !== "external-command" ||
-    typeof parsed.scriptPath !== "string" ||
-    !path.isAbsolute(parsed.scriptPath) ||
+    !["external-command", "local-oauth"].includes(String(parsed.adapter)) ||
     typeof parsed.profile !== "string"
   ) {
     throw new AppError(
@@ -134,14 +185,32 @@ export async function readGoogleConnectorConfig(
     );
   }
 
-  const config: GoogleConnectorConfig = {
-    schemaVersion: "0.1.0",
-    adapter: "external-command",
-    scriptPath: parsed.scriptPath,
-    profile: validateGoogleProfile(parsed.profile),
-  };
+  let config: GoogleConnectorConfig;
+  if (parsed.adapter === "external-command") {
+    if (
+      typeof parsed.scriptPath !== "string" ||
+      !path.isAbsolute(parsed.scriptPath)
+    ) {
+      throw new AppError(
+        "GOOGLE_CONFIG_INVALID",
+        "Google connector configuration is invalid.",
+      );
+    }
+    config = {
+      schemaVersion: "0.1.0",
+      adapter: "external-command",
+      scriptPath: parsed.scriptPath,
+      profile: validateGoogleProfile(parsed.profile),
+    };
+  } else {
+    config = {
+      schemaVersion: "0.1.0",
+      adapter: "local-oauth",
+      profile: validateGoogleProfile(parsed.profile),
+    };
+  }
   if (typeof parsed.ga4Property === "string") {
-    const ga4Property = normalizeProperty(parsed.ga4Property);
+    const ga4Property = normalizeGa4Property(parsed.ga4Property);
     if (ga4Property !== undefined) {
       config.ga4Property = ga4Property;
     }

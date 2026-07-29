@@ -6,12 +6,12 @@ import type {
   Ga4Property,
   Ga4ReportRequest,
   Ga4ReportResponse,
-  GoogleConnectorConfig,
   GoogleConnectorStatus,
   GoogleDataProvider,
   GoogleInventory,
   GscReportRequest,
   GscReportResponse,
+  ExternalGoogleConnectorConfig,
   SearchConsoleSite,
 } from "./types.js";
 
@@ -78,9 +78,9 @@ function normalizeSearchConsoleSites(value: unknown): SearchConsoleSite[] {
 }
 
 export class ExternalGoogleDataProvider implements GoogleDataProvider {
-  readonly config: GoogleConnectorConfig;
+  readonly config: ExternalGoogleConnectorConfig;
 
-  constructor(config: GoogleConnectorConfig) {
+  constructor(config: ExternalGoogleConnectorConfig) {
     this.config = config;
   }
 

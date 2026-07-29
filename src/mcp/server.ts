@@ -5,7 +5,7 @@ import * as z from "zod/v4";
 import { buildAcquisitionReport } from "../analysis/acquisition.js";
 import { runDoctor } from "../commands/doctor.js";
 import { readGoogleConnectorConfig } from "../connectors/google/config.js";
-import { ExternalGoogleDataProvider } from "../connectors/google/externalProvider.js";
+import { createGoogleDataProvider } from "../connectors/google/provider.js";
 import { classifyUserAgent } from "../core/agentRegistry.js";
 import { evidenceJsonSchema } from "../core/evidence.js";
 import { analyzeLogFile } from "../core/logs.js";
@@ -22,12 +22,12 @@ async function selectedGoogleProvider(projectRoot: string) {
   const config = await readGoogleConnectorConfig(projectRoot);
   if (!config) {
     throw new Error(
-      "Google connector is not configured. Run aitraffic google configure.",
+      "Google connector is not configured. Run aitraffic google select or aitraffic google configure.",
     );
   }
   return {
     config,
-    provider: new ExternalGoogleDataProvider(config),
+    provider: await createGoogleDataProvider(config),
   };
 }
 
@@ -103,7 +103,7 @@ export async function serveMcp(): Promise<void> {
           selected: null,
         });
       }
-      const status = await new ExternalGoogleDataProvider(config).status();
+      const status = await (await createGoogleDataProvider(config)).status();
       return textResult({
         configured: status.configured,
         adapter: config.adapter,

@@ -15,6 +15,8 @@ The working alpha includes:
 - a versioned evidence JSON Schema;
 - local Nginx/Apache combined-log and NDJSON import;
 - honest AI crawler/agent classification with `user_agent_only` verification labels;
+- native Google OAuth with PKCE, state validation, named profiles, refresh, and revoke;
+- native OS credential-store persistence with no CLI or plaintext token fallback;
 - a credential-isolating adapter for existing local Google OAuth profiles;
 - typed read-only GA4 and Google Search Console reports;
 - an equal-period AI/search acquisition report with explicit limitations;
@@ -22,7 +24,7 @@ The working alpha includes:
 - Codex and Claude Code setup guidance;
 - research and roadmap documentation under `docs/research/`.
 
-AItraffic does not yet own a standalone OAuth flow, scheduled collection, or a hosted connector. The current Google path deliberately reuses an explicit external local profile and never imports or prints its tokens.
+AItraffic does not yet include scheduled collection or a hosted connector. Native OAuth is local and bring-your-own-client: the person running the CLI creates the Google OAuth client, completes consent in Google, and keeps credentials in the OS credential store. Tokens are never printed or exposed through MCP.
 
 ## Quick start
 
@@ -33,11 +35,22 @@ npx -y aitraffic@latest schema evidence --format json
 npx -y aitraffic@latest logs import access.log --format json
 ```
 
-Connect an existing read-only Google profile:
+Connect Google directly:
 
 ```bash
-npx -y aitraffic@latest google configure \
-  --adapter-script /absolute/path/to/google-data.mjs \
+# Put GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and the exact redirect URI in
+# a private file. The default redirect is:
+# http://localhost:3000/api/auth/callback/google
+npx -y aitraffic@latest auth google configure \
+  --from-env-file /absolute/path/to/.env.google
+
+# You personally complete Google sign-in and consent in the browser.
+npx -y aitraffic@latest auth google login --profile work
+
+npx -y aitraffic@latest google inventory --profile work --format json
+
+# Select exact resources after reviewing inventory.
+npx -y aitraffic@latest google select \
   --profile work \
   --ga4-property 123456789 \
   --gsc-site sc-domain:example.com \
@@ -45,11 +58,10 @@ npx -y aitraffic@latest google configure \
 
 # Review the dry run, then repeat without --dry-run.
 npx -y aitraffic@latest google status --format json
-npx -y aitraffic@latest google inventory --format json
 npx -y aitraffic@latest report acquisition --days 28 --format json
 ```
 
-The adapter configuration contains only a script path, profile label, and explicit resource IDs. OAuth credentials remain in the external profile store.
+Before login, enable the Google Analytics Data API, Google Analytics Admin API, and Search Console API in your Google Cloud project. Create a Web application OAuth client and register the redirect URI exactly. See the [Google connector guide](docs/guides/google-connector.md) for the complete setup and the optional TrafficClaw/external-adapter path.
 
 Install globally if you prefer the shorter executable:
 
@@ -64,7 +76,7 @@ aitraffic mcp serve
 Pin an exact version for reproducible automation:
 
 ```bash
-npx -y aitraffic@0.1.1 version
+npx -y aitraffic@0.2.0 version
 ```
 
 ## Terminal contract
@@ -86,9 +98,14 @@ aitraffic schema evidence
 aitraffic logs import <path>
 aitraffic crawlers <path>
 aitraffic classify <user-agent>
+aitraffic auth google configure --from-env-file PATH
+aitraffic auth google login --profile NAME
+aitraffic auth google status [--profile NAME]
+aitraffic auth google revoke --profile NAME [--dry-run] [--local-only]
 aitraffic google configure --adapter-script PATH --profile NAME [--ga4-property ID] [--gsc-site SITE] [--dry-run]
+aitraffic google select --profile NAME [--ga4-property ID] [--gsc-site SITE] [--dry-run]
 aitraffic google status
-aitraffic google inventory
+aitraffic google inventory [--profile NAME]
 aitraffic ga4 report [--start DATE] [--end DATE] [--dimensions CSV] [--metrics CSV] [--limit N]
 aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N]
 aitraffic report acquisition [--days N]
@@ -135,10 +152,11 @@ Claude Code should read [CLAUDE.md](CLAUDE.md), which points to the same enginee
 
 See [Agent integrations](docs/guides/agent-integrations.md) for local development, published-package, JSON, and security examples.
 
-The proposed Google connector extraction and TrafficClaw hosted/local boundary
-is documented in the
+The Google connector extraction and TrafficClaw hosted/local boundary is
+documented in the
 [TrafficClaw Google reuse plan](docs/guides/trafficclaw-google-reuse.md).
-The implemented alpha adapter is documented in the
+Native OAuth, direct Google APIs, and the compatible external adapter are
+documented in the
 [Google connector guide](docs/guides/google-connector.md).
 
 ## Example log analysis
