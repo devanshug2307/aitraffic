@@ -3,13 +3,24 @@ import {
   crawlSite,
   type SiteCrawlAnalysis,
 } from "../analysis/siteCrawl.js";
+import {
+  gscSiteCoversUrl,
+  prioritizeUnifiedFindings,
+  sameApexWwwBoundary,
+  type FullAuditFocus,
+  type UnifiedFindingCandidate,
+  type UnifiedPriorityFinding,
+} from "../analysis/fullAudit.js";
 import { buildOpportunityAnalysis } from "../analysis/opportunities.js";
 import { createSiteHttpClient } from "../connectors/site/http.js";
 import type {
   GoogleConnectorConfig,
   GoogleDataProvider,
 } from "../connectors/google/types.js";
-import type { SiteHttpClient } from "../connectors/site/types.js";
+import type {
+  SiteHttpClient,
+  SiteHttpResponse,
+} from "../connectors/site/types.js";
 import {
   capabilityRunId,
   describeCapability,
@@ -24,6 +35,10 @@ export interface CapabilityRunContext {
   google?: {
     config: GoogleConnectorConfig;
     provider: GoogleDataProvider;
+  };
+  googleUnavailable?: {
+    code: string;
+    message: string;
   };
   siteClient?: SiteHttpClient;
   now?: Date;
@@ -42,6 +57,10 @@ export interface CapabilityRunParameters {
   sitemap?: "auto" | "none" | string;
   maxSitemaps?: number;
   maxSitemapBytes?: number;
+  google?: "auto" | "off" | "required";
+  opportunityLimit?: number;
+  focus?: FullAuditFocus;
+  top?: number;
 }
 
 type OpportunityAnalysis = Awaited<
@@ -74,6 +93,51 @@ export type SiteCrawlEnvelope = CapabilityRunEnvelope<
   SiteCrawlAnalysis["recommendations"][number]
 >;
 
+export type FullAuditGoogleStatus =
+  | "disabled"
+  | "not_configured"
+  | "site_mismatch"
+  | "failed"
+  | "included";
+
+export type FullAuditEnvelope = CapabilityRunEnvelope<
+  {
+    auditMode: "technical-only" | "technical-and-google";
+    focus: FullAuditFocus;
+    technical: {
+      runId: string;
+      coverage: CapabilityCoverage;
+      summary: Omit<SiteCrawlEnvelope["result"], "pages">;
+    };
+    google: {
+      requested: "auto" | "off" | "required";
+      status: FullAuditGoogleStatus;
+      reason: string | null;
+      runId: string | null;
+      selectedSite: string | null;
+      selectedGa4Property: string | null;
+      selectedPages: number;
+      completedAudits: number;
+      failedAudits: number;
+      coverage: CapabilityCoverage | null;
+      sourceEvidence: Pick<
+        GoogleOpportunityEnvelope["result"],
+        "periods" | "sourceCoverage"
+      > | null;
+    };
+    prioritization: {
+      requested: number;
+      eligible: number;
+      returned: number;
+      omitted: number;
+      findings: UnifiedPriorityFinding[];
+    };
+  },
+  SiteCrawlEnvelope["observations"][number] | OpportunityAuditEnvelope["observations"][number],
+  SiteCrawlEnvelope["findings"][number] | OpportunityAuditEnvelope["findings"][number],
+  SiteCrawlEnvelope["recommendations"][number] | OpportunityAuditEnvelope["recommendations"][number]
+>;
+
 export interface OpportunityPageAudit {
   url: string;
   sourceFindingRefs: string[];
@@ -87,6 +151,7 @@ export type OpportunityAuditEnvelope = CapabilityRunEnvelope<
     completedAudits: number;
     failedAudits: number;
     opportunityRunId: string;
+    opportunity: GoogleOpportunityEnvelope["result"];
     pageAudits: OpportunityPageAudit[];
   },
   OpportunityAnalysis["observations"][number] | PageAuditAnalysis["observations"][number],
@@ -475,14 +540,20 @@ async function runSiteCrawl(
   };
 }
 
-function prioritizedPages(opportunities: GoogleOpportunityEnvelope, limit: number) {
+function prioritizedPages(
+  opportunities: GoogleOpportunityEnvelope,
+  limit: number,
+  scopeUrl?: string,
+) {
   const priority = { high: 0, medium: 1, low: 2 } as const;
   const candidates = opportunities.findings
     .filter(
       (item) =>
         item.kind === "page_query" &&
         item.page !== null &&
-        /^https?:\/\//iu.test(item.page),
+        /^https?:\/\//iu.test(item.page) &&
+        (scopeUrl === undefined ||
+          sameApexWwwBoundary(item.page, scopeUrl)),
     )
     .sort(
       (left, right) =>
@@ -525,7 +596,11 @@ async function runOpportunityAudits(
   }
   const startedAt = new Date().toISOString();
   const opportunities = await runGoogleOpportunities(parameters, context);
-  const selected = prioritizedPages(opportunities, parameters.limit ?? 5);
+  const selected = prioritizedPages(
+    opportunities,
+    parameters.limit ?? 5,
+    parameters.url,
+  );
   const pageAudits: OpportunityPageAudit[] = [];
   for (const selection of selected) {
     try {
@@ -603,6 +678,7 @@ async function runOpportunityAudits(
       completedAudits: completed.length,
       failedAudits: failed,
       opportunityRunId: opportunities.run.id,
+      opportunity: opportunities.result,
       pageAudits,
     },
     observations: [
@@ -628,6 +704,383 @@ async function runOpportunityAudits(
   };
 }
 
+function memoizeSiteClient(client: SiteHttpClient): SiteHttpClient {
+  const cache = new Map<string, Promise<SiteHttpResponse>>();
+  return {
+    get(url, options) {
+      const key = `${url}\u0000${JSON.stringify(options)}`;
+      const existing = cache.get(key);
+      if (existing !== undefined) {
+        return existing;
+      }
+      const request = client.get(url, options);
+      cache.set(key, request);
+      return request;
+    },
+  };
+}
+
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter(({ id }) => {
+    if (seen.has(id)) {
+      return false;
+    }
+    seen.add(id);
+    return true;
+  });
+}
+
+function uniqueStrings(items: string[]): string[] {
+  return [...new Set(items)];
+}
+
+function fullAuditOptions(parameters: CapabilityRunParameters): {
+  google: "auto" | "off" | "required";
+  focus: FullAuditFocus;
+  opportunityLimit: number;
+  top: number;
+} {
+  const google = parameters.google ?? "auto";
+  if (!["auto", "off", "required"].includes(google)) {
+    throw new AppError(
+      "INVALID_FULL_AUDIT_GOOGLE_MODE",
+      "site.full_audit google must be auto, off, or required.",
+    );
+  }
+  const focus = parameters.focus ?? "all";
+  if (
+    !["all", "indexing", "internal-links", "structured-data"].includes(
+      focus,
+    )
+  ) {
+    throw new AppError(
+      "INVALID_FULL_AUDIT_FOCUS",
+      "site.full_audit focus must be all, indexing, internal-links, or structured-data.",
+    );
+  }
+  const opportunityLimit = parameters.opportunityLimit ?? 5;
+  if (
+    !Number.isInteger(opportunityLimit) ||
+    opportunityLimit < 1 ||
+    opportunityLimit > 20
+  ) {
+    throw new AppError(
+      "INVALID_FULL_AUDIT_OPPORTUNITY_LIMIT",
+      "site.full_audit opportunityLimit must be an integer from 1 to 20.",
+    );
+  }
+  const top = parameters.top ?? 10;
+  if (!Number.isInteger(top) || top < 1 || top > 100) {
+    throw new AppError(
+      "INVALID_FULL_AUDIT_TOP",
+      "site.full_audit top must be an integer from 1 to 100.",
+    );
+  }
+  return {
+    google: google as "auto" | "off" | "required",
+    focus: focus as FullAuditFocus,
+    opportunityLimit,
+    top,
+  };
+}
+
+async function runFullAudit(
+  parameters: CapabilityRunParameters,
+  context: CapabilityRunContext,
+): Promise<FullAuditEnvelope> {
+  if (!parameters.url) {
+    throw new AppError(
+      "MISSING_FULL_AUDIT_URL",
+      "site.full_audit requires a URL.",
+    );
+  }
+  const options = fullAuditOptions(parameters);
+  if (options.google === "required" && context.google === undefined) {
+    throw new AppError(
+      context.googleUnavailable?.code ?? "GOOGLE_NOT_CONFIGURED",
+      context.googleUnavailable?.message ??
+        "Google evidence was required, but a selected profile, GA4 property, and Search Console site are unavailable.",
+    );
+  }
+
+  const startedAt = new Date().toISOString();
+  const sharedClient = memoizeSiteClient(
+    context.siteClient ?? createSiteHttpClient(),
+  );
+  const sharedContext: CapabilityRunContext = {
+    ...context,
+    siteClient: sharedClient,
+  };
+  const crawl = await runSiteCrawl(parameters, sharedContext);
+
+  let googleAudit: OpportunityAuditEnvelope | null = null;
+  const unavailableIsFailure =
+    context.googleUnavailable !== undefined &&
+    ![
+      "GOOGLE_NOT_CONFIGURED",
+      "GOOGLE_RESOURCES_NOT_SELECTED",
+    ].includes(context.googleUnavailable.code);
+  let googleStatus: FullAuditGoogleStatus =
+    options.google === "off"
+      ? "disabled"
+      : unavailableIsFailure
+        ? "failed"
+        : "not_configured";
+  let googleReason: string | null =
+    options.google === "off"
+      ? "Google evidence was disabled for this run."
+      : context.googleUnavailable?.message ??
+        "No complete Google profile, GA4 property, and Search Console site selection was available.";
+
+  if (options.google !== "off" && context.google !== undefined) {
+    const gscSite = context.google.config.gscSite;
+    const ga4Property = context.google.config.ga4Property;
+    if (!gscSite || !ga4Property) {
+      googleStatus = "not_configured";
+      googleReason =
+        "The selected Google profile does not include both a GA4 property and Search Console site.";
+      if (options.google === "required") {
+        throw new AppError(
+          "GOOGLE_RESOURCES_NOT_SELECTED",
+          googleReason,
+        );
+      }
+    } else if (!gscSiteCoversUrl(gscSite, crawl.result.requestedUrl)) {
+      googleStatus = "site_mismatch";
+      googleReason = `The selected Search Console property ${gscSite} does not cover ${crawl.result.requestedUrl}.`;
+      if (options.google === "required") {
+        throw new AppError("GOOGLE_SITE_MISMATCH", googleReason);
+      }
+    } else {
+      try {
+        googleAudit = await runOpportunityAudits(
+          {
+            url: crawl.result.requestedUrl,
+            ...(parameters.days !== undefined
+              ? { days: parameters.days }
+              : {}),
+            ...(parameters.maxRows !== undefined
+              ? { maxRows: parameters.maxRows }
+              : {}),
+            ...(parameters.minImpressions !== undefined
+              ? { minImpressions: parameters.minImpressions }
+              : {}),
+            limit: options.opportunityLimit,
+            ...(parameters.timeoutMs !== undefined
+              ? { timeoutMs: parameters.timeoutMs }
+              : {}),
+            ...(parameters.maxBytes !== undefined
+              ? { maxBytes: parameters.maxBytes }
+              : {}),
+            ...(parameters.maxRedirects !== undefined
+              ? { maxRedirects: parameters.maxRedirects }
+              : {}),
+          },
+          sharedContext,
+        );
+        googleStatus = "included";
+        googleReason = null;
+      } catch (error) {
+        if (options.google === "required") {
+          throw error;
+        }
+        googleStatus = "failed";
+        googleReason =
+          error instanceof Error
+            ? error.message
+            : "The optional Google audit failed.";
+      }
+    }
+  }
+
+  const scopedGoogleFindings =
+    googleAudit?.findings.filter((finding) => {
+      if (!("kind" in finding)) {
+        return true;
+      }
+      const urls = [
+        ...(finding.page === null ? [] : [finding.page]),
+        ...(finding.metrics.competingPages ?? []).map(({ page }) => page),
+      ];
+      return (
+        urls.length > 0 &&
+        urls.every((url) =>
+          sameApexWwwBoundary(url, crawl.result.requestedUrl),
+        )
+      );
+    }) ?? [];
+  const scopedGoogleFindingIds = new Set(
+    scopedGoogleFindings.map(({ id }) => id),
+  );
+  const scopedGoogleEvidenceIds = new Set(
+    scopedGoogleFindings.flatMap(({ evidenceRefs }) => evidenceRefs),
+  );
+  const scopedGoogleObservations =
+    googleAudit?.observations.filter((observation) =>
+      scopedGoogleEvidenceIds.has(observation.id),
+    ) ?? [];
+  const scopedGoogleRecommendations =
+    googleAudit?.recommendations.filter(({ findingRefs }) =>
+      findingRefs.some((id) => scopedGoogleFindingIds.has(id)),
+    ) ?? [];
+
+  const observations = uniqueById([
+    ...crawl.observations,
+    ...scopedGoogleObservations,
+  ]);
+  const findings = uniqueById([
+    ...crawl.findings,
+    ...scopedGoogleFindings,
+  ]);
+  const recommendations = uniqueById([
+    ...crawl.recommendations,
+    ...scopedGoogleRecommendations,
+  ]);
+  const sources = uniqueById([
+    ...crawl.sources,
+    ...(googleAudit?.sources ?? []),
+  ]);
+
+  const crawlFindingIds = new Set(crawl.findings.map(({ id }) => id));
+  const candidates: UnifiedFindingCandidate[] = findings.map((finding) => {
+    const crawlUrls = crawl.result.pages
+      .filter(({ findingRefs }) => findingRefs.includes(finding.id))
+      .map(({ url }) => url);
+    const opportunityUrls =
+      googleAudit?.result.pageAudits
+        .filter(({ audit }) =>
+          audit?.findings.some(({ id }) => id === finding.id),
+        )
+        .map(({ url }) => url) ?? [];
+    return {
+      finding,
+      urls: uniqueStrings([...crawlUrls, ...opportunityUrls]),
+      sourceRunId: crawlFindingIds.has(finding.id)
+        ? crawl.run.id
+        : googleAudit?.run.id ?? crawl.run.id,
+    };
+  });
+  const prioritization = prioritizeUnifiedFindings(candidates, {
+    focus: options.focus,
+    limit: options.top,
+  });
+  const { pages: _pages, ...technicalSummary } = crawl.result;
+  const googleCoverage = googleAudit?.coverage ?? null;
+  const googleFailed = googleStatus === "failed";
+  const incompleteReasons = uniqueStrings([
+    ...crawl.coverage.incompleteReasons,
+    ...(googleCoverage?.incompleteReasons ?? []),
+    ...(googleFailed && googleReason !== null
+      ? [`optional Google audit failed: ${googleReason}`]
+      : []),
+  ]);
+  const coverage: CapabilityCoverage = {
+    requested:
+      crawl.coverage.requested + (googleCoverage?.requested ?? 0),
+    observed:
+      crawl.coverage.observed + (googleCoverage?.observed ?? 0),
+    omitted:
+      crawl.coverage.omitted === null ||
+      googleCoverage?.omitted === null
+        ? null
+        : crawl.coverage.omitted + (googleCoverage?.omitted ?? 0),
+    truncated:
+      crawl.coverage.truncated ||
+      (googleCoverage?.truncated ?? false),
+    sampled: false,
+    partial:
+      crawl.coverage.partial ||
+      (googleCoverage?.partial ?? false) ||
+      googleFailed,
+    incompleteReasons,
+  };
+  const googleConfig = context.google?.config;
+  const warnings = uniqueStrings([
+    ...crawl.warnings,
+    ...(googleAudit?.warnings ?? []),
+    ...(googleStatus === "included"
+      ? [
+          "Google findings and priority-page audits were restricted to the crawl's apex/www host boundary.",
+        ]
+      : []),
+    ...(googleStatus !== "included" && googleReason !== null
+      ? [googleReason]
+      : []),
+    "Unified priority is an AItraffic operational order, not a Google ranking or traffic guarantee.",
+    "Effort remains unknown until the repository or CMS implementation is inspected.",
+  ]);
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    run: {
+      id: capabilityRunId(),
+      capabilityId: "site.full_audit",
+      startedAt,
+      completedAt: new Date().toISOString(),
+      mode: "read-only",
+    },
+    subject: {
+      profile:
+        googleStatus === "included"
+          ? googleConfig?.profile ?? "public-web"
+          : "public-web",
+      site:
+        googleStatus === "included"
+          ? googleConfig?.gscSite ?? null
+          : null,
+      ga4Property:
+        googleStatus === "included"
+          ? googleConfig?.ga4Property ?? null
+          : null,
+      url: crawl.result.requestedUrl,
+    },
+    sources,
+    coverage,
+    result: {
+      auditMode:
+        googleStatus === "included"
+          ? "technical-and-google"
+          : "technical-only",
+      focus: options.focus,
+      technical: {
+        runId: crawl.run.id,
+        coverage: crawl.coverage,
+        summary: technicalSummary,
+      },
+      google: {
+        requested: options.google,
+        status: googleStatus,
+        reason: googleReason,
+        runId: googleAudit?.run.id ?? null,
+        selectedSite: googleConfig?.gscSite ?? null,
+        selectedGa4Property: googleConfig?.ga4Property ?? null,
+        selectedPages: googleAudit?.result.selectedPages ?? 0,
+        completedAudits: googleAudit?.result.completedAudits ?? 0,
+        failedAudits: googleAudit?.result.failedAudits ?? 0,
+        coverage: googleCoverage,
+        sourceEvidence:
+          googleAudit === null
+            ? null
+            : {
+                periods: googleAudit.result.opportunity.periods,
+                sourceCoverage:
+                  googleAudit.result.opportunity.sourceCoverage,
+              },
+      },
+      prioritization: {
+        requested: options.top,
+        ...prioritization,
+      },
+    },
+    observations,
+    findings,
+    recommendations,
+    artifacts: [],
+    warnings,
+  };
+}
+
 export function runCapability(
   capabilityId: "google.opportunities",
   parameters: CapabilityRunParameters,
@@ -649,6 +1102,11 @@ export function runCapability(
   context: CapabilityRunContext,
 ): Promise<SiteCrawlEnvelope>;
 export function runCapability(
+  capabilityId: "site.full_audit",
+  parameters: CapabilityRunParameters,
+  context: CapabilityRunContext,
+): Promise<FullAuditEnvelope>;
+export function runCapability(
   capabilityId: string,
   parameters: CapabilityRunParameters,
   context: CapabilityRunContext,
@@ -657,6 +1115,7 @@ export function runCapability(
   | PageAuditEnvelope
   | OpportunityAuditEnvelope
   | SiteCrawlEnvelope
+  | FullAuditEnvelope
 >;
 export async function runCapability(
   capabilityId: string,
@@ -667,6 +1126,7 @@ export async function runCapability(
   | PageAuditEnvelope
   | OpportunityAuditEnvelope
   | SiteCrawlEnvelope
+  | FullAuditEnvelope
 > {
   if (!describeCapability(capabilityId)) {
     throw new AppError(
@@ -685,6 +1145,9 @@ export async function runCapability(
   }
   if (capabilityId === "site.audit_opportunities") {
     return runOpportunityAudits(parameters, context);
+  }
+  if (capabilityId === "site.full_audit") {
+    return runFullAudit(parameters, context);
   }
   throw new AppError(
     "CAPABILITY_NOT_IMPLEMENTED",

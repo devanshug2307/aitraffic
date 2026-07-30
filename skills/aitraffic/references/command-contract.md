@@ -19,6 +19,7 @@ Registered capability IDs:
 | `site.crawl` | Bounded sitemap and static-link crawl without Google authentication |
 | `google.opportunities` | GSC demand joined to GA4 Organic Search landing outcomes |
 | `site.audit_opportunities` | Google opportunities plus bounded audits of priority pages |
+| `site.full_audit` | Unified crawl plus optional matching Google evidence and one priority order |
 
 Compatibility MCP tools include `google_connection_status`,
 `list_google_resources`, `run_gsc_report`, `run_ga4_report`,
@@ -33,6 +34,7 @@ aitraffic doctor --format json
 aitraffic capabilities list --format json
 aitraffic capabilities describe site.crawl --format json
 aitraffic capabilities run site.crawl --url https://example.com --limit 25 --format json
+aitraffic audit https://example.com --google auto --format json
 aitraffic crawl https://example.com --limit 25 --format json
 aitraffic audit page https://example.com/page --format json
 aitraffic opportunities --days 28 --format json
@@ -43,7 +45,7 @@ aitraffic crawlers access.log --format json
 
 Prefer an installed executable, project-local dependency, or locally built
 checkout. If none exists, ask before retrieving a package and use an explicit
-version such as `npx -y aitraffic@0.6.0`; do not silently execute
+version such as `npx -y aitraffic@0.6.1`; do not silently execute
 `aitraffic@latest`. Pin every CI or reproducible automation command.
 
 ## Failure handling

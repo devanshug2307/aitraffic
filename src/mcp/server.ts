@@ -6,7 +6,10 @@ import { buildAcquisitionReport } from "../analysis/acquisition.js";
 import { runCapability } from "../capabilities/run.js";
 import { runDoctor } from "../commands/doctor.js";
 import { readGoogleConnectorConfig } from "../connectors/google/config.js";
-import { createGoogleDataProvider } from "../connectors/google/provider.js";
+import {
+  createGoogleDataProvider,
+  resolveOptionalGoogleDataProvider,
+} from "../connectors/google/provider.js";
 import { classifyUserAgent } from "../core/agentRegistry.js";
 import {
   describeCapability,
@@ -125,6 +128,17 @@ export async function serveMcp(): Promise<void> {
           .max(10 * 1024 * 1024)
           .optional(),
         maxRedirects: z.number().int().min(0).max(10).optional(),
+        google: z.enum(["auto", "off", "required"]).optional(),
+        opportunityLimit: z.number().int().min(1).max(20).optional(),
+        focus: z
+          .enum([
+            "all",
+            "indexing",
+            "internal-links",
+            "structured-data",
+          ])
+          .optional(),
+        top: z.number().int().min(1).max(100).optional(),
       }),
     },
     async ({
@@ -141,6 +155,10 @@ export async function serveMcp(): Promise<void> {
       maxBytes,
       maxSitemapBytes,
       maxRedirects,
+      google: googleMode,
+      opportunityLimit,
+      focus,
+      top,
     }) => {
       if (!describeCapability(id)) {
         throw new Error(`Unknown capability: ${id}`);
@@ -151,6 +169,10 @@ export async function serveMcp(): Promise<void> {
       const google = needsGoogle
         ? await selectedGoogleProvider(projectRoot)
         : undefined;
+      const optionalGoogle =
+        id === "site.full_audit" && googleMode !== "off"
+          ? await resolveOptionalGoogleDataProvider(projectRoot)
+          : undefined;
       return textResult(
         await runCapability(
           id,
@@ -169,8 +191,22 @@ export async function serveMcp(): Promise<void> {
               ? { maxSitemapBytes }
               : {}),
             ...(maxRedirects !== undefined ? { maxRedirects } : {}),
+            ...(googleMode !== undefined ? { google: googleMode } : {}),
+            ...(opportunityLimit !== undefined
+              ? { opportunityLimit }
+              : {}),
+            ...(focus !== undefined ? { focus } : {}),
+            ...(top !== undefined ? { top } : {}),
           },
-          { ...(google !== undefined ? { google } : {}) },
+          {
+            ...(google !== undefined ? { google } : {}),
+            ...(optionalGoogle?.google !== undefined
+              ? { google: optionalGoogle.google }
+              : {}),
+            ...(optionalGoogle?.unavailable !== undefined
+              ? { googleUnavailable: optionalGoogle.unavailable }
+              : {}),
+          },
         ),
       );
     },

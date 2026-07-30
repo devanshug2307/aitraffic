@@ -83,6 +83,7 @@ test("references only registered capabilities and MCP tools", async () => {
     "site.page_audit",
     "site.crawl",
     "site.audit_opportunities",
+    "site.full_audit",
   ]) {
     assert.ok(capabilityIds.includes(id), id);
     assert.match(combined, new RegExp(`\\b${id.replace(".", "\\.")}\\b`, "u"));
@@ -126,6 +127,7 @@ test("documents only implemented CLI command families", async () => {
     "crawl",
     "audit page",
     "audit opportunities",
+    "audit",
     "opportunities",
     "report acquisition",
     "crawlers",

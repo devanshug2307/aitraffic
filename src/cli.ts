@@ -21,7 +21,10 @@ import {
   loginGoogleOAuthProfile,
   revokeGoogleOAuthProfile,
 } from "./connectors/google/oauth.js";
-import { createGoogleDataProvider } from "./connectors/google/provider.js";
+import {
+  createGoogleDataProvider,
+  resolveOptionalGoogleDataProvider,
+} from "./connectors/google/provider.js";
 import type {
   GscAggregationType,
   GscDataState,
@@ -89,6 +92,7 @@ Usage:
   aitraffic report acquisition [--days N]
   aitraffic opportunities [--days N] [--max-rows N] [--min-impressions N]
   aitraffic crawl <URL> [--limit N] [--concurrency N] [--sitemap auto|none|URL] [--max-sitemaps N]
+  aitraffic audit <URL> [--google auto|off|required] [--technical-only] [--focus all|indexing|internal-links|structured-data] [--top N]
   aitraffic audit page <URL> [--timeout-ms N] [--max-bytes N] [--max-redirects N]
   aitraffic audit opportunities [--limit N] [--days N] [--max-rows N] [--min-impressions N]
   aitraffic capabilities list
@@ -500,6 +504,58 @@ function parseCrawlOptions(args: string[]) {
       ),
     },
     remaining: site.remaining,
+  };
+}
+
+function parseFullAuditOptions(args: string[]) {
+  const technicalOnly = takeFlag(args, "--technical-only");
+  const google = extractOption(technicalOnly.remaining, "--google");
+  if (technicalOnly.present && google.value !== undefined) {
+    throw new AppError(
+      "CONFLICTING_AUDIT_GOOGLE_OPTIONS",
+      "--technical-only cannot be combined with --google.",
+    );
+  }
+  const opportunityLimit = extractOption(
+    google.remaining,
+    "--opportunity-limit",
+  );
+  const focus = extractOption(opportunityLimit.remaining, "--focus");
+  const top = extractOption(focus.remaining, "--top");
+  const crawl = parseCrawlOptions(top.remaining);
+  const opportunity = parseOpportunityOptions(crawl.remaining);
+  return {
+    parameters: {
+      ...crawl.parameters,
+      ...opportunity.parameters,
+      google: technicalOnly.present
+        ? ("off" as const)
+        : enumOption(
+            google.value,
+            "auto",
+            "--google",
+            ["auto", "off", "required"] as const,
+          ),
+      opportunityLimit: positiveInteger(
+        opportunityLimit.value,
+        5,
+        "--opportunity-limit",
+        20,
+      ),
+      focus: enumOption(
+        focus.value,
+        "all",
+        "--focus",
+        [
+          "all",
+          "indexing",
+          "internal-links",
+          "structured-data",
+        ] as const,
+      ),
+      top: positiveInteger(top.value, 10, "--top", 100),
+    },
+    remaining: opportunity.remaining,
   };
 }
 
@@ -992,6 +1048,14 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
         ...(url.value !== undefined ? { url: url.value } : {}),
       };
       remaining = options.remaining;
+    } else if (capabilityId === "site.full_audit") {
+      const url = extractOption(capabilityArgs, "--url");
+      const options = parseFullAuditOptions(url.remaining);
+      parameters = {
+        ...options.parameters,
+        ...(url.value !== undefined ? { url: url.value } : {}),
+      };
+      remaining = options.remaining;
     } else if (capabilityId === "site.audit_opportunities") {
       const options = parseOpportunityAuditOptions(capabilityArgs);
       parameters = options.parameters;
@@ -1018,10 +1082,21 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
       capabilityId === "google.opportunities" ||
       capabilityId === "site.audit_opportunities";
     const google = needsGoogle ? await googleProvider() : undefined;
+    const optionalGoogle =
+      capabilityId === "site.full_audit" &&
+      parameters.google !== "off"
+        ? await resolveOptionalGoogleDataProvider()
+        : undefined;
     return success(
       "capabilities run",
       await runCapability(capabilityId, parameters, {
         ...(google !== undefined ? { google } : {}),
+        ...(optionalGoogle?.google !== undefined
+          ? { google: optionalGoogle.google }
+          : {}),
+        ...(optionalGoogle?.unavailable !== undefined
+          ? { googleUnavailable: optionalGoogle.unavailable }
+          : {}),
       }),
     );
   }
@@ -1097,6 +1172,43 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
         "site.audit_opportunities",
         options.parameters,
         { google },
+      ),
+    );
+  }
+
+  if (command === "audit") {
+    const url = rest[0];
+    if (!url) {
+      throw new AppError(
+        "MISSING_FULL_AUDIT_URL",
+        "Usage: aitraffic audit <URL>",
+      );
+    }
+    const options = parseFullAuditOptions(rest.slice(1));
+    assertNoUnknownOptions(options.remaining);
+    if (options.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${options.remaining[0]}`,
+      );
+    }
+    const optionalGoogle =
+      options.parameters.google === "off"
+        ? undefined
+        : await resolveOptionalGoogleDataProvider();
+    return success(
+      "audit",
+      await runCapability(
+        "site.full_audit",
+        { url, ...options.parameters },
+        {
+          ...(optionalGoogle?.google !== undefined
+            ? { google: optionalGoogle.google }
+            : {}),
+          ...(optionalGoogle?.unavailable !== undefined
+            ? { googleUnavailable: optionalGoogle.unavailable }
+            : {}),
+        },
       ),
     );
   }

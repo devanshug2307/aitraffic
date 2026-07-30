@@ -26,6 +26,7 @@ The working alpha includes:
 - a bounded public-page audit covering HTTP, redirects, robots, static metadata, canonicals, JSON-LD syntax, headings, and links;
 - a bounded apex/www-scoped sitemap and static-link crawler with explicit coverage and compact agent output;
 - a priority-page workflow that safely audits unique pages selected from GA4/GSC opportunities;
+- one unified audit that composes the bounded crawl with optional matching GSC/GA4 opportunity evidence and returns a compact deterministic priority order;
 - one first-party `aitraffic` skill that routes Codex and Claude Code through evidence-first setup, audit, opportunity, acquisition, internal-link, structured-data, and verification recipes;
 - a local read-only MCP server with Google, log, and evidence tools;
 - Codex and Claude Code setup guidance;
@@ -46,6 +47,7 @@ npx -y aitraffic@latest init --agent both --site https://example.com
 npx -y aitraffic@latest schema evidence --format json
 npx -y aitraffic@latest logs import access.log --format json
 npx -y aitraffic@latest crawl https://example.com --limit 25 --format json
+npx -y aitraffic@latest audit https://example.com --format json
 ```
 
 Connect Google directly:
@@ -105,7 +107,7 @@ approves the proposed diff.
 Pin an exact CLI version for reproducible automation:
 
 ```bash
-npx -y aitraffic@0.6.0 version
+npx -y aitraffic@0.6.1 version
 ```
 
 ## Terminal contract
@@ -143,6 +145,7 @@ aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N] 
 aitraffic report acquisition [--days N]
 aitraffic opportunities [--days N] [--max-rows N] [--min-impressions N]
 aitraffic crawl <URL> [--limit N] [--concurrency N] [--sitemap auto|none|URL] [--max-sitemaps N] [--max-sitemap-bytes N]
+aitraffic audit <URL> [--google auto|off|required] [--technical-only] [--opportunity-limit N] [--focus all|indexing|internal-links|structured-data] [--top N]
 aitraffic audit page <URL> [--timeout-ms N] [--max-bytes N] [--max-redirects N]
 aitraffic page audit <URL> [--timeout-ms N] [--max-bytes N] [--max-redirects N]
 aitraffic audit opportunities [--limit N] [--days N] [--max-rows N] [--min-impressions N]
@@ -235,6 +238,37 @@ Only call the crawl complete when `coverage.partial` and
 `coverage.truncated` are both false. Even then, it covers returned static HTML
 and supported apex/www-scoped sitemap sources—not JavaScript-rendered navigation,
 external sources, indexing, rankings, or AI citations.
+
+## Unified audit
+
+Run the bounded crawl and automatically add matching GSC/GA4 opportunity
+evidence when the selected Google resources are available:
+
+```bash
+aitraffic audit https://example.com --format json
+aitraffic audit https://example.com --technical-only --limit 50 --format json
+aitraffic audit https://example.com \
+  --google required \
+  --opportunity-limit 5 \
+  --focus indexing \
+  --top 10 \
+  --format json
+aitraffic capabilities describe site.full_audit --format json
+```
+
+Google defaults to `auto`. Missing, incomplete, mismatched, or failed optional
+Google evidence is reported explicitly while the technical audit remains
+usable. `--google required` fails instead of degrading, and
+`--technical-only` avoids Google entirely. The selected Search Console property
+must cover the audited URL; AItraffic cannot independently prove that a
+selected GA4 property belongs to the same domain.
+
+The compact priority list combines deterministic technical severity with
+observed Google demand, deduplicates overlapping page findings, and reuses
+page fetches within the run. `--focus` filters only that priority list—the raw
+findings remain available. Priority is an operational review order, not a
+ranking or traffic forecast, and implementation effort stays unknown until the
+repository or CMS is inspected.
 
 ## Codex
 

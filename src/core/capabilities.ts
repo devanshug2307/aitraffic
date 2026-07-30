@@ -310,6 +310,137 @@ const CAPABILITY_DEFINITIONS = [
       "A page fetch failure is reported as partial coverage rather than hidden.",
     ],
   },
+  {
+    id: "site.full_audit",
+    title: "Unified technical and Google opportunity audit",
+    category: "technical-seo",
+    purpose:
+      "Run one bounded static site crawl, optionally add matching Search Console and GA4 opportunity evidence, and return one deterministic priority order.",
+    sideEffects: "none",
+    costClass: "free",
+    inputSchema: {
+      type: "object",
+      required: ["url"],
+      properties: {
+        url: { type: "string", format: "uri" },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 500,
+          default: 25,
+        },
+        concurrency: {
+          type: "integer",
+          minimum: 1,
+          maximum: 10,
+          default: 3,
+        },
+        sitemap: {
+          description:
+            "Use auto discovery, disable sitemap discovery with none, or provide an exact same-origin sitemap URL.",
+          anyOf: [
+            { enum: ["auto", "none"] },
+            { type: "string", format: "uri" },
+          ],
+          default: "auto",
+        },
+        maxSitemaps: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+          default: 20,
+        },
+        timeoutMs: {
+          type: "integer",
+          minimum: 1,
+          maximum: 30000,
+          default: 10000,
+        },
+        maxBytes: {
+          type: "integer",
+          minimum: 1,
+          maximum: 10485760,
+          default: 2097152,
+        },
+        maxSitemapBytes: {
+          type: "integer",
+          minimum: 1,
+          maximum: 10485760,
+          default: 5242880,
+        },
+        maxRedirects: {
+          type: "integer",
+          minimum: 0,
+          maximum: 10,
+          default: 5,
+        },
+        google: {
+          enum: ["auto", "off", "required"],
+          default: "auto",
+          description:
+            "Auto includes Google only when matching resources are available; required fails instead of degrading.",
+        },
+        opportunityLimit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 20,
+          default: 5,
+        },
+        days: {
+          type: "integer",
+          minimum: 1,
+          maximum: 366,
+          default: 28,
+        },
+        maxRows: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100000,
+          default: 50000,
+        },
+        minImpressions: {
+          type: "integer",
+          minimum: 1,
+          maximum: 1000000,
+          default: 100,
+        },
+        focus: {
+          enum: [
+            "all",
+            "indexing",
+            "internal-links",
+            "structured-data",
+          ],
+          default: "all",
+          description:
+            "Filters the compact priority list without hiding collected findings.",
+        },
+        top: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+          default: 10,
+        },
+      },
+      additionalProperties: false,
+    },
+    outputContract: [
+      "coverage",
+      "result",
+      "findings",
+      "recommendations",
+      "observations",
+      "warnings",
+    ],
+    limitations: [
+      "The technical component inherits every static crawl limit and does not render JavaScript.",
+      "Google auto mode degrades to a clearly labeled technical-only report when complete matching resources are unavailable.",
+      "A selected Search Console property must cover the audited URL; GA4 property-to-domain ownership cannot be independently proven from the selected ID.",
+      "The priority order combines AItraffic operational severity with observed Google demand; it is not a ranking, traffic, or revenue forecast.",
+      "Focus changes only the compact priority list and never suppresses raw collected findings.",
+      "Implementation effort remains unknown until the repository or CMS is inspected.",
+    ],
+  },
 ] as const satisfies readonly CapabilityDefinition[];
 
 export function listCapabilities(): CapabilityDefinition[] {

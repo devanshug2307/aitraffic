@@ -17,6 +17,7 @@ test("lists a compact, read-only capability registry", () => {
       "site.page_audit",
       "site.crawl",
       "site.audit_opportunities",
+      "site.full_audit",
     ],
   );
   assert.equal(capabilities.every(({ sideEffects }) => sideEffects === "none"), true);

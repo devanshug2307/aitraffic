@@ -13,6 +13,7 @@ import {
 } from "node:zlib";
 
 import { AppError } from "../../core/result.js";
+import { VERSION } from "../../core/version.js";
 import {
   resolvePublicAuditUrl,
   resolveSiteHost,
@@ -26,7 +27,7 @@ import type {
   SiteRedirectHop,
 } from "./types.js";
 
-const USER_AGENT = "AItraffic/0.5 (+https://aitraffic.dev)";
+const USER_AGENT = `AItraffic/${VERSION} (+https://aitraffic.dev)`;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 export interface SiteRawResponse {

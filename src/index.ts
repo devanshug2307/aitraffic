@@ -5,6 +5,15 @@ export {
   type AcquisitionReport,
 } from "./analysis/acquisition.js";
 export {
+  gscSiteCoversUrl,
+  prioritizeUnifiedFindings,
+  sameApexWwwBoundary,
+  type FullAuditFocus,
+  type FullAuditPriority,
+  type UnifiedFindingCandidate,
+  type UnifiedPriorityFinding,
+} from "./analysis/fullAudit.js";
+export {
   auditPage,
   type PageAuditAnalysis,
   type PageAuditFinding,
@@ -35,6 +44,8 @@ export {
   type CapabilityRunContext,
   type CapabilityRunParameters,
   type GoogleOpportunityEnvelope,
+  type FullAuditEnvelope,
+  type FullAuditGoogleStatus,
   type OpportunityAuditEnvelope,
   type OpportunityPageAudit,
   type PageAuditEnvelope,
@@ -80,7 +91,11 @@ export {
   parseEnvFile,
   validateGoogleRedirectUri,
 } from "./connectors/google/oauth.js";
-export { createGoogleDataProvider } from "./connectors/google/provider.js";
+export {
+  createGoogleDataProvider,
+  resolveOptionalGoogleDataProvider,
+  type OptionalGoogleDataProvider,
+} from "./connectors/google/provider.js";
 export {
   fetchPaginatedGa4Report,
   fetchPaginatedGscReport,

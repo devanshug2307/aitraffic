@@ -64,6 +64,7 @@ The first `0.4.0` value slice is implemented locally and remains unpublished:
 | Opportunity-to-page orchestration | Complete locally | `audit opportunities --limit 5` and `site.audit_opportunities` |
 | Bounded sitemap and static-link crawl | Complete locally in `0.5.1` | `crawl <URL>`, `site.crawl`, compact observations, explicit partial/truncated coverage |
 | First-party agent router skill | Complete locally in `0.6.0` | One `aitraffic` skill, nine task recipes, four shared references, MCP-first/CLI-fallback workflow, and drift tests |
+| Unified technical and Google audit | Complete locally in `0.6.1` | `aitraffic audit <URL>` and `site.full_audit`; Google auto/off/required, property match guard, focus, compact priority order |
 | Unbounded or rendered crawl | Not started | Deliberately excluded; rendering remains a later sampled mode |
 | Public first-party router skill | Complete locally in `0.6.0` | Install with `npx skills add devanshug2307/aitraffic --skill aitraffic` after the repository is pushed |
 
@@ -847,6 +848,41 @@ The canonical skill now lives at `skills/aitraffic/` with:
 
 The npm package includes the skill folder for inspection and offline reuse.
 GitHub installation remains the recommended path for the `skills` CLI.
+
+### Implemented unified audit (`0.6.1`)
+
+The `site.full_audit` capability and `aitraffic audit <URL>` command now
+compose existing collectors rather than duplicating their rules:
+
+```bash
+aitraffic audit https://example.com --google auto --top 10 --format json
+aitraffic capabilities run site.full_audit \
+  --url https://example.com \
+  --google required \
+  --opportunity-limit 5 \
+  --focus indexing \
+  --format json
+```
+
+The technical crawl always runs. Google `auto` adds opportunity and
+priority-page evidence only when a complete selected profile exists and the
+Search Console property covers the audited URL. Missing, mismatched, or failed
+optional Google evidence produces a labeled technical-only report;
+`--google required` fails instead. GA4 property-to-domain ownership remains an
+explicit unknown.
+
+The unified result:
+
+- retains component run IDs and coverage;
+- deduplicates observations, findings, recommendations, and sources by ID;
+- reuses identical page fetches during the same run;
+- ranks a bounded top list while retaining every raw finding;
+- supports all, indexing, internal-link, or structured-data focus without
+  changing collection;
+- explains the impact basis and confidence for every prioritized item;
+- reports implementation effort as unknown until code or CMS inspection;
+- never presents the operational order as a Google score, ranking forecast, or
+  traffic guarantee.
 
 ## `0.7.0` — Opportunity Queue and Change Verification
 
