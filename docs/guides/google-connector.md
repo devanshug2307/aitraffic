@@ -189,6 +189,7 @@ npx -y aitraffic@latest gsc report \
   --format json
 
 npx -y aitraffic@latest report acquisition --days 28 --format json
+npx -y aitraffic@latest opportunities --days 28 --format json
 ```
 
 The unified report uses yesterday as the GA4 end date and three days ago as the Search Console end date. It compares equal inclusive periods and reports:
@@ -201,6 +202,14 @@ The unified report uses yesterday as the GA4 end date and three days ago as the 
 - deterministic query/page opportunities for returned rows in positions 4–20 with at least 10 impressions.
 
 The report does not claim that a Search Console query caused a GA4 session, that a crawler visit created a citation, or that an AI referral caused revenue. Search Console can omit anonymized or low-volume queries, and GA4 can be affected by consent, thresholding, retention, and property setup.
+
+The `opportunities` workflow is the higher-level action queue. It paginates
+Search Console query/page rows, compares equal final-data periods, reports
+low-CTR, striking-distance, decline, winner/loser, and page-overlap signals,
+and joins current GA4 Organic Search sessions, engagement, key events, and
+revenue by normalized landing path. Its output uses a shared capability run envelope with
+explicit coverage and evidence references. Page overlap is a review candidate,
+not automatic proof that two pages should be consolidated.
 
 ## Revoke a profile
 

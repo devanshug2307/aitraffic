@@ -65,6 +65,25 @@ export interface Ga4ReportResponse {
   propertyQuota?: unknown;
 }
 
+export type Ga4StringMatchType =
+  | "EXACT"
+  | "BEGINS_WITH"
+  | "ENDS_WITH"
+  | "CONTAINS"
+  | "FULL_REGEXP"
+  | "PARTIAL_REGEXP";
+
+export interface Ga4FilterExpression {
+  filter: {
+    fieldName: string;
+    stringFilter: {
+      matchType?: Ga4StringMatchType;
+      value: string;
+      caseSensitive?: boolean;
+    };
+  };
+}
+
 export interface GscRow {
   keys?: string[];
   clicks?: number;
@@ -73,17 +92,76 @@ export interface GscRow {
   position?: number;
 }
 
-export interface GscReportResponse {
-  rows?: GscRow[];
-  responseAggregationType?: string;
-}
-
 export interface Ga4ReportRequest {
   start: string;
   end: string;
   dimensions: string[];
   metrics: string[];
   limit?: number;
+  offset?: number;
+  dimensionFilter?: Ga4FilterExpression;
+}
+
+export interface Ga4ReportCoverage {
+  requestedRows: number;
+  observedRows: number;
+  pagesFetched: number;
+  pageSize: number;
+  truncated: boolean;
+  partial: boolean;
+  incompleteReasons: string[];
+}
+
+export interface PaginatedGa4Report {
+  response: Ga4ReportResponse;
+  coverage: Ga4ReportCoverage;
+}
+
+export type GscSearchType =
+  | "web"
+  | "image"
+  | "video"
+  | "news"
+  | "discover"
+  | "googleNews";
+
+export type GscDataState = "final" | "all" | "hourly_all";
+
+export type GscAggregationType =
+  | "auto"
+  | "byPage"
+  | "byProperty"
+  | "byNewsShowcasePanel";
+
+export type GscFilterDimension =
+  | "query"
+  | "page"
+  | "country"
+  | "device"
+  | "searchAppearance";
+
+export type GscFilterOperator =
+  | "contains"
+  | "equals"
+  | "notContains"
+  | "notEquals"
+  | "includingRegex"
+  | "excludingRegex";
+
+export interface GscDimensionFilter {
+  dimension: GscFilterDimension;
+  operator: GscFilterOperator;
+  expression: string;
+}
+
+export interface GscDimensionFilterGroup {
+  groupType?: "and";
+  filters: GscDimensionFilter[];
+}
+
+export interface GscResponseMetadata {
+  first_incomplete_date?: string;
+  first_incomplete_hour?: string;
 }
 
 export interface GscReportRequest {
@@ -92,8 +170,32 @@ export interface GscReportRequest {
   dimensions: string[];
   limit?: number;
   offset?: number;
-  type?: string;
-  dataState?: "final" | "all";
+  type?: GscSearchType;
+  dataState?: GscDataState;
+  aggregationType?: GscAggregationType;
+  dimensionFilterGroups?: GscDimensionFilterGroup[];
+}
+
+export interface GscReportResponse {
+  rows?: GscRow[];
+  responseAggregationType?: string;
+  metadata?: GscResponseMetadata;
+}
+
+export interface GscReportCoverage {
+  requestedRows: number;
+  observedRows: number;
+  pagesFetched: number;
+  pageSize: number;
+  topRowsOnly: true;
+  truncated: boolean;
+  partial: boolean;
+  incompleteReasons: string[];
+}
+
+export interface PaginatedGscReport {
+  response: GscReportResponse;
+  coverage: GscReportCoverage;
 }
 
 export interface GoogleDataProvider {

@@ -381,7 +381,7 @@ export async function buildAcquisitionReport(
   const gscRequest = {
     dimensions: ["query", "page"],
     limit: 25_000,
-    type: "web",
+    type: "web" as const,
     dataState: "final" as const,
   };
 

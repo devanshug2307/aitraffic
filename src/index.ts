@@ -5,6 +5,21 @@ export {
   type AcquisitionReport,
 } from "./analysis/acquisition.js";
 export {
+  buildOpportunityAnalysis,
+  type LandingOutcome,
+  type OpportunityAnalysis,
+  type OpportunityFinding,
+  type OpportunityObservation,
+  type OpportunityRecommendation,
+  type OpportunitySignal,
+  type SearchMovement,
+} from "./analysis/opportunities.js";
+export {
+  runCapability,
+  type CapabilityRunContext,
+  type CapabilityRunParameters,
+} from "./capabilities/run.js";
+export {
   configureGoogleConnector,
   googleConfigPath,
   normalizeGa4Property,
@@ -21,19 +36,37 @@ export {
   validateGoogleRedirectUri,
 } from "./connectors/google/oauth.js";
 export { createGoogleDataProvider } from "./connectors/google/provider.js";
+export {
+  fetchPaginatedGa4Report,
+  fetchPaginatedGscReport,
+} from "./connectors/google/pagination.js";
 export type {
   ExternalGoogleConnectorConfig,
   Ga4Property,
+  Ga4FilterExpression,
+  Ga4ReportCoverage,
   Ga4ReportRequest,
   Ga4ReportResponse,
+  Ga4StringMatchType,
   GoogleConnectorConfig,
   GoogleConnectorSelection,
   GoogleConnectorStatus,
   GoogleDataProvider,
   GoogleInventory,
+  GscAggregationType,
+  GscDataState,
+  GscDimensionFilter,
+  GscDimensionFilterGroup,
+  GscFilterDimension,
+  GscFilterOperator,
   GscReportRequest,
+  GscReportCoverage,
   GscReportResponse,
+  GscResponseMetadata,
+  GscSearchType,
   LocalGoogleConnectorConfig,
+  PaginatedGscReport,
+  PaginatedGa4Report,
   SearchConsoleSite,
 } from "./connectors/google/types.js";
 export {
@@ -49,6 +82,16 @@ export {
   evidenceJsonSchema,
   type EvidenceClass,
 } from "./core/evidence.js";
+export {
+  capabilityRunId,
+  describeCapability,
+  listCapabilities,
+  type CapabilityCoverage,
+  type CapabilityDefinition,
+  type CapabilityRunEnvelope,
+  type CapabilitySideEffects,
+  type CapabilitySource,
+} from "./core/capabilities.js";
 export {
   analyzeLogFile,
   parseLogLine,

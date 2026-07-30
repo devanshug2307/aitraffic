@@ -100,7 +100,7 @@ openclaw mcp set aitraffic '{"command":"npx","args":["-y","aitraffic@latest","mc
 Pin a version in CI or another reproducible environment:
 
 ```bash
-npx -y aitraffic@0.3.0 version
+npx -y aitraffic@0.4.0 version
 ```
 
 The GitHub release remains an available fallback:
@@ -132,6 +132,9 @@ Agents can depend on:
 
 ## MCP tools in the alpha
 
+- `aitraffic_list_capabilities`
+- `aitraffic_describe_capability`
+- `aitraffic_run`
 - `get_project_status`
 - `get_evidence_schema`
 - `classify_user_agent`
@@ -143,6 +146,17 @@ Agents can depend on:
 - `analyze_ai_acquisition`
 
 All are read-only. `analyze_log_file` refuses paths outside the project unless the process is explicitly opted into broader access. Google tools use only the profile and resources selected through the CLI; credentials are never returned through MCP.
+
+For new agent workflows, prefer:
+
+```text
+aitraffic_list_capabilities
+  -> aitraffic_describe_capability
+  -> aitraffic_run
+  -> inspect coverage, evidence, findings, and verification
+```
+
+The older report-specific tools remain available for compatibility.
 
 ## Agent prompt guidance
 

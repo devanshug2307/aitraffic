@@ -3,10 +3,15 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 
 import { buildAcquisitionReport } from "../analysis/acquisition.js";
+import { runCapability } from "../capabilities/run.js";
 import { runDoctor } from "../commands/doctor.js";
 import { readGoogleConnectorConfig } from "../connectors/google/config.js";
 import { createGoogleDataProvider } from "../connectors/google/provider.js";
 import { classifyUserAgent } from "../core/agentRegistry.js";
+import {
+  describeCapability,
+  listCapabilities,
+} from "../core/capabilities.js";
 import { evidenceJsonSchema } from "../core/evidence.js";
 import { analyzeLogFile } from "../core/logs.js";
 import { resolveReadableProjectFile } from "../core/project.js";
@@ -56,6 +61,66 @@ export async function serveMcp(): Promise<void> {
       inputSchema: z.object({}),
     },
     async () => textResult(evidenceJsonSchema),
+  );
+
+  server.registerTool(
+    "aitraffic_list_capabilities",
+    {
+      description:
+        "List AItraffic capabilities and their read/write behavior. Use this before selecting a workflow.",
+      inputSchema: z.object({}),
+    },
+    async () => textResult(listCapabilities()),
+  );
+
+  server.registerTool(
+    "aitraffic_describe_capability",
+    {
+      description:
+        "Describe one capability's purpose, input schema, output contract, and limitations.",
+      inputSchema: z.object({
+        id: z.string().describe("Capability ID returned by the list tool."),
+      }),
+    },
+    async ({ id }) => {
+      const definition = describeCapability(id);
+      if (!definition) {
+        throw new Error(`Unknown capability: ${id}`);
+      }
+      return textResult(definition);
+    },
+  );
+
+  server.registerTool(
+    "aitraffic_run",
+    {
+      description:
+        "Run a registered read-only capability and return the shared evidence envelope.",
+      inputSchema: z.object({
+        id: z.string().describe("Capability ID returned by the list tool."),
+        days: z.number().int().min(1).max(366).default(28),
+        maxRows: z.number().int().min(1).max(100_000).default(50_000),
+        minImpressions: z
+          .number()
+          .int()
+          .min(1)
+          .max(1_000_000)
+          .default(100),
+      }),
+    },
+    async ({ id, days, maxRows, minImpressions }) => {
+      if (!describeCapability(id)) {
+        throw new Error(`Unknown capability: ${id}`);
+      }
+      const { config, provider } = await selectedGoogleProvider(projectRoot);
+      return textResult(
+        await runCapability(
+          id,
+          { days, maxRows, minImpressions },
+          { config, provider },
+        ),
+      );
+    },
   );
 
   server.registerTool(
@@ -143,14 +208,15 @@ export async function serveMcp(): Promise<void> {
           .array(z.string())
           .default(["totalUsers", "sessions", "screenPageViews"]),
         limit: z.number().int().min(1).max(100_000).default(1_000),
+        offset: z.number().int().min(0).max(10_000_000).default(0),
       }),
     },
-    async ({ start, end, dimensions, metrics, limit }) => {
+    async ({ start, end, dimensions, metrics, limit, offset }) => {
       const { config, provider } = await selectedGoogleProvider(projectRoot);
       if (!config.ga4Property) {
         throw new Error("No GA4 property is selected for this project.");
       }
-      const request = { start, end, dimensions, metrics, limit };
+      const request = { start, end, dimensions, metrics, limit, offset };
       return textResult({
         evidenceClass: "observed",
         source: {
@@ -179,9 +245,58 @@ export async function serveMcp(): Promise<void> {
         end: z.string(),
         dimensions: z.array(z.string()).default(["query"]),
         limit: z.number().int().min(1).max(25_000).default(1_000),
+        offset: z.number().int().min(0).max(10_000_000).default(0),
+        type: z
+          .enum([
+            "web",
+            "image",
+            "video",
+            "news",
+            "discover",
+            "googleNews",
+          ])
+          .default("web"),
+        dataState: z
+          .enum(["final", "all", "hourly_all"])
+          .default("final"),
+        aggregationType: z
+          .enum(["auto", "byPage", "byProperty", "byNewsShowcasePanel"])
+          .default("auto"),
+        filters: z
+          .array(
+            z.object({
+              dimension: z.enum([
+                "query",
+                "page",
+                "country",
+                "device",
+                "searchAppearance",
+              ]),
+              operator: z.enum([
+                "contains",
+                "equals",
+                "notContains",
+                "notEquals",
+                "includingRegex",
+                "excludingRegex",
+              ]),
+              expression: z.string().min(1),
+            }),
+          )
+          .default([]),
       }),
     },
-    async ({ start, end, dimensions, limit }) => {
+    async ({
+      start,
+      end,
+      dimensions,
+      limit,
+      offset,
+      type,
+      dataState,
+      aggregationType,
+      filters,
+    }) => {
       const { config, provider } = await selectedGoogleProvider(projectRoot);
       if (!config.gscSite) {
         throw new Error(
@@ -193,7 +308,17 @@ export async function serveMcp(): Promise<void> {
         end,
         dimensions,
         limit,
-        dataState: "final" as const,
+        offset,
+        type,
+        dataState,
+        aggregationType,
+        ...(filters.length > 0
+          ? {
+              dimensionFilterGroups: [
+                { groupType: "and" as const, filters },
+              ],
+            }
+          : {}),
       };
       return textResult({
         evidenceClass: "observed",

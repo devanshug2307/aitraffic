@@ -21,6 +21,8 @@ The working alpha includes:
 - a credential-isolating adapter for existing local Google OAuth profiles;
 - typed read-only GA4 and Google Search Console reports;
 - an equal-period AI/search acquisition report with explicit limitations;
+- a shared capability registry and provenance/coverage run envelope;
+- a unified Google opportunity report joining GSC demand to GA4 landing outcomes;
 - a local read-only MCP server with Google, log, and evidence tools;
 - Codex and Claude Code setup guidance;
 - research and roadmap documentation under `docs/research/`.
@@ -62,6 +64,7 @@ npx -y aitraffic@latest google select \
 
 # Review the dry run, then repeat without --dry-run.
 npx -y aitraffic@latest google status --format json
+npx -y aitraffic@latest opportunities --days 28 --format json
 npx -y aitraffic@latest report acquisition --days 28 --format json
 ```
 
@@ -80,7 +83,7 @@ aitraffic mcp serve
 Pin an exact version for reproducible automation:
 
 ```bash
-npx -y aitraffic@0.3.0 version
+npx -y aitraffic@0.4.0 version
 ```
 
 ## Terminal contract
@@ -113,14 +116,43 @@ aitraffic google configure --adapter-script PATH --profile NAME [--ga4-property 
 aitraffic google select --profile NAME [--ga4-property ID] [--gsc-site SITE] [--dry-run]
 aitraffic google status
 aitraffic google inventory [--profile NAME]
-aitraffic ga4 report [--start DATE] [--end DATE] [--dimensions CSV] [--metrics CSV] [--limit N]
-aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N]
+aitraffic ga4 report [--start DATE] [--end DATE] [--dimensions CSV] [--metrics CSV] [--limit N] [--offset N]
+aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N] [--offset N] [--type TYPE] [--data-state STATE] [--aggregation TYPE] [--filter DIMENSION:OPERATOR:EXPRESSION]
 aitraffic report acquisition [--days N]
+aitraffic opportunities [--days N] [--max-rows N] [--min-impressions N]
+aitraffic capabilities list
+aitraffic capabilities describe <id>
+aitraffic capabilities run <id> [--days N] [--max-rows N] [--min-impressions N]
 aitraffic mcp serve
 aitraffic version
 ```
 
 Every non-MCP command supports `--format text|json`.
+
+## Google opportunity workflow
+
+Run the value-first workflow after selecting one GA4 property and one Search
+Console site:
+
+```bash
+aitraffic capabilities list --format json
+aitraffic capabilities describe google.opportunities --format json
+aitraffic opportunities --days 28 --format json
+```
+
+`opportunities` compares equal current and previous Search Console periods,
+paginates Search Console and GA4 rows, and identifies:
+
+- queries in positions 4–20 with existing demand;
+- CTR below the connected property's returned-row baseline;
+- material click declines plus top winners and losers;
+- queries with meaningful impressions across multiple pages.
+
+The command joins current GA4 Organic Search landing-page sessions, engagement,
+key events, and revenue by normalized URL path. Every response discloses row caps,
+freshness, partial-data reasons, evidence references, inferred findings, and
+reviewable actions with a verification command. The join is aggregate evidence,
+not user-level attribution, and recommendations do not promise uplift.
 
 ## Codex
 

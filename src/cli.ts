@@ -5,6 +5,7 @@ import {
   acquisitionPeriods,
   buildAcquisitionReport,
 } from "./analysis/acquisition.js";
+import { runCapability } from "./capabilities/run.js";
 import {
   configureGoogleConnector,
   readGoogleConnectorConfig,
@@ -19,11 +20,21 @@ import {
 } from "./connectors/google/oauth.js";
 import { createGoogleDataProvider } from "./connectors/google/provider.js";
 import type {
+  GscAggregationType,
+  GscDataState,
+  GscDimensionFilter,
+  GscFilterDimension,
+  GscFilterOperator,
   GoogleConnectorConfig,
   GoogleDataProvider,
+  GscSearchType,
 } from "./connectors/google/types.js";
 import { createSystemGoogleVault } from "./connectors/google/vault.js";
 import { classifyUserAgent } from "./core/agentRegistry.js";
+import {
+  describeCapability,
+  listCapabilities,
+} from "./core/capabilities.js";
 import { evidenceJsonSchema } from "./core/evidence.js";
 import { analyzeLogFile } from "./core/logs.js";
 import {
@@ -70,9 +81,13 @@ Usage:
   aitraffic google select --profile NAME [--ga4-property ID] [--gsc-site SITE] [--dry-run]
   aitraffic google status
   aitraffic google inventory [--profile NAME]
-  aitraffic ga4 report [--start DATE] [--end DATE] [--dimensions CSV] [--metrics CSV] [--limit N]
-  aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N]
+  aitraffic ga4 report [--start DATE] [--end DATE] [--dimensions CSV] [--metrics CSV] [--limit N] [--offset N]
+  aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N] [--offset N] [--type TYPE] [--data-state STATE] [--aggregation TYPE] [--filter DIMENSION:OPERATOR:EXPRESSION]
   aitraffic report acquisition [--days N]
+  aitraffic opportunities [--days N] [--max-rows N] [--min-impressions N]
+  aitraffic capabilities list
+  aitraffic capabilities describe <id>
+  aitraffic capabilities run <id> [--days N] [--max-rows N] [--min-impressions N]
   aitraffic mcp serve
   aitraffic version
 
@@ -176,6 +191,39 @@ function extractOption(
   return result;
 }
 
+function extractRepeatedOption(
+  args: string[],
+  name: string,
+): { values: string[]; remaining: string[] } {
+  const remaining: string[] = [];
+  const values: string[] = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+    if (value === name) {
+      const optionValue = args[index + 1];
+      if (!optionValue || optionValue.startsWith("--")) {
+        throw new AppError(
+          "MISSING_OPTION_VALUE",
+          `${name} requires a value.`,
+        );
+      }
+      values.push(optionValue);
+      index += 1;
+      continue;
+    }
+    if (value?.startsWith(`${name}=`)) {
+      values.push(value.slice(name.length + 1));
+      continue;
+    }
+    if (value !== undefined) {
+      remaining.push(value);
+    }
+  }
+
+  return { values, remaining };
+}
+
 function takeFlag(
   args: string[],
   name: string,
@@ -230,6 +278,129 @@ function positiveInteger(
     );
   }
   return parsed;
+}
+
+function nonNegativeInteger(
+  value: string | undefined,
+  fallback: number,
+  label: string,
+  maximum: number,
+): number {
+  if (value === undefined) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > maximum) {
+    throw new AppError(
+      "INVALID_NUMBER",
+      `${label} must be an integer from 0 to ${maximum}.`,
+    );
+  }
+  return parsed;
+}
+
+function enumOption<const T extends readonly string[]>(
+  value: string | undefined,
+  fallback: T[number],
+  label: string,
+  allowed: T,
+): T[number] {
+  const selected = value ?? fallback;
+  if (!allowed.includes(selected)) {
+    throw new AppError(
+      "INVALID_OPTION_VALUE",
+      `${label} must be one of: ${allowed.join(", ")}.`,
+    );
+  }
+  return selected;
+}
+
+const GSC_FILTER_DIMENSIONS = [
+  "query",
+  "page",
+  "country",
+  "device",
+  "searchAppearance",
+] as const;
+
+const GSC_FILTER_OPERATORS = [
+  "contains",
+  "equals",
+  "notContains",
+  "notEquals",
+  "includingRegex",
+  "excludingRegex",
+] as const;
+
+function parseGscFilter(value: string): GscDimensionFilter {
+  const firstSeparator = value.indexOf(":");
+  const secondSeparator = value.indexOf(":", firstSeparator + 1);
+  if (firstSeparator < 1 || secondSeparator <= firstSeparator + 1) {
+    throw new AppError(
+      "INVALID_GSC_FILTER",
+      "--filter must use DIMENSION:OPERATOR:EXPRESSION.",
+    );
+  }
+  const dimension = value.slice(0, firstSeparator);
+  const operator = value.slice(firstSeparator + 1, secondSeparator);
+  const expression = value.slice(secondSeparator + 1);
+  if (!(GSC_FILTER_DIMENSIONS as readonly string[]).includes(dimension)) {
+    throw new AppError(
+      "INVALID_GSC_FILTER_DIMENSION",
+      `Filter dimension must be one of: ${GSC_FILTER_DIMENSIONS.join(", ")}.`,
+    );
+  }
+  if (!(GSC_FILTER_OPERATORS as readonly string[]).includes(operator)) {
+    throw new AppError(
+      "INVALID_GSC_FILTER_OPERATOR",
+      `Filter operator must be one of: ${GSC_FILTER_OPERATORS.join(", ")}.`,
+    );
+  }
+  if (!expression) {
+    throw new AppError(
+      "INVALID_GSC_FILTER",
+      "Filter expression cannot be empty.",
+    );
+  }
+  return {
+    dimension: dimension as GscFilterDimension,
+    operator: operator as GscFilterOperator,
+    expression,
+  };
+}
+
+function parseOpportunityOptions(args: string[]): {
+  parameters: {
+    days: number;
+    maxRows: number;
+    minImpressions: number;
+  };
+  remaining: string[];
+} {
+  const days = extractOption(args, "--days");
+  const maxRows = extractOption(days.remaining, "--max-rows");
+  const minImpressions = extractOption(
+    maxRows.remaining,
+    "--min-impressions",
+  );
+  return {
+    parameters: {
+      days: positiveInteger(days.value, 28, "--days", 366),
+      maxRows: positiveInteger(
+        maxRows.value,
+        50_000,
+        "--max-rows",
+        100_000,
+      ),
+      minImpressions: positiveInteger(
+        minImpressions.value,
+        100,
+        "--min-impressions",
+        1_000_000,
+      ),
+    },
+    remaining: minImpressions.remaining,
+  };
 }
 
 async function googleProvider(profile?: string): Promise<{
@@ -658,17 +829,105 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
     ]);
   }
 
+  if (command === "capabilities" && rest[0] === "list") {
+    assertNoUnknownOptions(rest.slice(1));
+    if (rest.length > 1) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${rest[1]}`,
+      );
+    }
+    return success("capabilities list", listCapabilities());
+  }
+
+  if (command === "capabilities" && rest[0] === "describe") {
+    const capabilityId = rest[1];
+    if (!capabilityId) {
+      throw new AppError(
+        "MISSING_CAPABILITY",
+        "Usage: aitraffic capabilities describe <id>",
+      );
+    }
+    assertNoUnknownOptions(rest.slice(2));
+    if (rest.length > 2) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${rest[2]}`,
+      );
+    }
+    const definition = describeCapability(capabilityId);
+    if (!definition) {
+      throw new AppError(
+        "UNKNOWN_CAPABILITY",
+        `Unknown capability: ${capabilityId}`,
+      );
+    }
+    return success("capabilities describe", definition);
+  }
+
+  if (command === "capabilities" && rest[0] === "run") {
+    const capabilityId = rest[1];
+    if (!capabilityId) {
+      throw new AppError(
+        "MISSING_CAPABILITY",
+        "Usage: aitraffic capabilities run <id>",
+      );
+    }
+    const options = parseOpportunityOptions(rest.slice(2));
+    assertNoUnknownOptions(options.remaining);
+    if (options.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${options.remaining[0]}`,
+      );
+    }
+    if (!describeCapability(capabilityId)) {
+      throw new AppError(
+        "UNKNOWN_CAPABILITY",
+        `Unknown capability: ${capabilityId}`,
+      );
+    }
+    const { config, provider } = await googleProvider();
+    return success(
+      "capabilities run",
+      await runCapability(capabilityId, options.parameters, {
+        config,
+        provider,
+      }),
+    );
+  }
+
+  if (command === "opportunities") {
+    const options = parseOpportunityOptions(rest);
+    assertNoUnknownOptions(options.remaining);
+    if (options.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${options.remaining[0]}`,
+      );
+    }
+    const { config, provider } = await googleProvider();
+    return success(
+      "opportunities",
+      await runCapability("google.opportunities", options.parameters, {
+        config,
+        provider,
+      }),
+    );
+  }
+
   if (command === "ga4" && rest[0] === "report") {
     const start = extractOption(rest.slice(1), "--start");
     const end = extractOption(start.remaining, "--end");
     const dimensions = extractOption(end.remaining, "--dimensions");
     const metrics = extractOption(dimensions.remaining, "--metrics");
     const limit = extractOption(metrics.remaining, "--limit");
-    assertNoUnknownOptions(limit.remaining);
-    if (limit.remaining.length > 0) {
+    const offset = extractOption(limit.remaining, "--offset");
+    assertNoUnknownOptions(offset.remaining);
+    if (offset.remaining.length > 0) {
       throw new AppError(
         "UNEXPECTED_ARGUMENT",
-        `Unexpected argument: ${limit.remaining[0]}`,
+        `Unexpected argument: ${offset.remaining[0]}`,
       );
     }
     const { config, provider } = await googleProvider();
@@ -688,6 +947,12 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
         "screenPageViews",
       ]),
       limit: positiveInteger(limit.value, 1_000, "--limit", 100_000),
+      offset: nonNegativeInteger(
+        offset.value,
+        0,
+        "--offset",
+        10_000_000,
+      ),
     };
     return success(
       "ga4 report",
@@ -714,11 +979,22 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
     const end = extractOption(start.remaining, "--end");
     const dimensions = extractOption(end.remaining, "--dimensions");
     const limit = extractOption(dimensions.remaining, "--limit");
-    assertNoUnknownOptions(limit.remaining);
-    if (limit.remaining.length > 0) {
+    const offset = extractOption(limit.remaining, "--offset");
+    const type = extractOption(offset.remaining, "--type");
+    const dataState = extractOption(type.remaining, "--data-state");
+    const aggregation = extractOption(
+      dataState.remaining,
+      "--aggregation",
+    );
+    const filters = extractRepeatedOption(
+      aggregation.remaining,
+      "--filter",
+    );
+    assertNoUnknownOptions(filters.remaining);
+    if (filters.remaining.length > 0) {
       throw new AppError(
         "UNEXPECTED_ARGUMENT",
-        `Unexpected argument: ${limit.remaining[0]}`,
+        `Unexpected argument: ${filters.remaining[0]}`,
       );
     }
     const { config, provider } = await googleProvider();
@@ -734,7 +1010,52 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
       end: end.value ?? defaultPeriod.end,
       dimensions: commaSeparated(dimensions.value, ["query"]),
       limit: positiveInteger(limit.value, 1_000, "--limit", 25_000),
-      dataState: "final" as const,
+      offset: nonNegativeInteger(
+        offset.value,
+        0,
+        "--offset",
+        10_000_000,
+      ),
+      type: enumOption(
+        type.value,
+        "web",
+        "--type",
+        [
+          "web",
+          "image",
+          "video",
+          "news",
+          "discover",
+          "googleNews",
+        ] as const,
+      ) as GscSearchType,
+      dataState: enumOption(
+        dataState.value,
+        "final",
+        "--data-state",
+        ["final", "all", "hourly_all"] as const,
+      ) as GscDataState,
+      aggregationType: enumOption(
+        aggregation.value,
+        "auto",
+        "--aggregation",
+        [
+          "auto",
+          "byPage",
+          "byProperty",
+          "byNewsShowcasePanel",
+        ] as const,
+      ) as GscAggregationType,
+      ...(filters.values.length > 0
+        ? {
+            dimensionFilterGroups: [
+              {
+                groupType: "and" as const,
+                filters: filters.values.map(parseGscFilter),
+              },
+            ],
+          }
+        : {}),
     };
     return success(
       "gsc report",

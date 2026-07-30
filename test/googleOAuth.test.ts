@@ -409,7 +409,11 @@ test("lists resources and runs direct read-only Google reports", async () => {
   const vault = new SecureGoogleVault(store);
   await vault.setClient(oauthClient());
   await vault.setProfile(oauthProfile());
-  const requests: Array<{ url: string; authorization: string | null }> = [];
+  const requests: Array<{
+    url: string;
+    authorization: string | null;
+    body: unknown;
+  }> = [];
   const fetchImplementation = (async (
     input: string | URL | Request,
     init?: RequestInit,
@@ -418,6 +422,10 @@ test("lists resources and runs direct read-only Google reports", async () => {
     requests.push({
       url,
       authorization: new Headers(init?.headers).get("authorization"),
+      body:
+        typeof init?.body === "string"
+          ? JSON.parse(init.body) as unknown
+          : null,
     });
     if (url.includes("accountSummaries")) {
       return jsonResponse({
@@ -485,20 +493,89 @@ test("lists resources and runs direct read-only Google reports", async () => {
     end: "yesterday",
     dimensions: ["date"],
     metrics: ["sessions"],
+    dimensionFilter: {
+      filter: {
+        fieldName: "sessionDefaultChannelGroup",
+        stringFilter: {
+          matchType: "EXACT",
+          value: "Organic Search",
+          caseSensitive: false,
+        },
+      },
+    },
   });
   const gsc = await provider.gscReport("sc-domain:example.com", {
     start: "2026-07-01",
     end: "2026-07-28",
     dimensions: ["query"],
+    offset: 25_000,
+    dataState: "hourly_all",
+    aggregationType: "byPage",
+    dimensionFilterGroups: [
+      {
+        groupType: "and",
+        filters: [
+          {
+            dimension: "query",
+            operator: "contains",
+            expression: "ai traffic",
+          },
+        ],
+      },
+    ],
   });
 
   assert.equal(inventory.ga4Properties[0]?.property, "properties/20");
+  assert.match(
+    requests[0]?.url ?? "",
+    /^https:\/\/analyticsadmin\.googleapis\.com\/v1beta\/accountSummaries/u,
+  );
   assert.equal(
     inventory.searchConsoleSites[0]?.siteUrl,
     "sc-domain:example.com",
   );
   assert.equal(ga4.rows?.[0]?.metricValues?.[0]?.value, "5");
+  assert.deepEqual(requests[2]?.body, {
+    dateRanges: [{ startDate: "28daysAgo", endDate: "yesterday" }],
+    dimensions: [{ name: "date" }],
+    metrics: [{ name: "sessions" }],
+    limit: "10000",
+    offset: "0",
+    dimensionFilter: {
+      filter: {
+        fieldName: "sessionDefaultChannelGroup",
+        stringFilter: {
+          matchType: "EXACT",
+          value: "Organic Search",
+          caseSensitive: false,
+        },
+      },
+    },
+    returnPropertyQuota: true,
+  });
   assert.equal(gsc.rows?.[0]?.clicks, 2);
+  assert.deepEqual(requests[3]?.body, {
+    startDate: "2026-07-01",
+    endDate: "2026-07-28",
+    dimensions: ["query"],
+    rowLimit: 1000,
+    startRow: 25000,
+    type: "web",
+    dataState: "hourly_all",
+    aggregationType: "byPage",
+    dimensionFilterGroups: [
+      {
+        groupType: "and",
+        filters: [
+          {
+            dimension: "query",
+            operator: "contains",
+            expression: "ai traffic",
+          },
+        ],
+      },
+    ],
+  });
   assert.equal(requests.length, 4);
   assert.equal(
     requests.every(

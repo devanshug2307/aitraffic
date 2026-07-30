@@ -164,7 +164,15 @@ export class ExternalGoogleDataProvider implements GoogleDataProvider {
       request.metrics.join(","),
       "--limit",
       String(request.limit ?? 10_000),
+      "--offset",
+      String(request.offset ?? 0),
     ];
+    if (request.dimensionFilter !== undefined) {
+      options.push(
+        "--dimension-filter-json",
+        JSON.stringify(request.dimensionFilter),
+      );
+    }
     return requireRecord(
       await this.run("ga4", options),
       "GA4 report",
@@ -195,6 +203,32 @@ export class ExternalGoogleDataProvider implements GoogleDataProvider {
       "--data-state",
       request.dataState ?? "final",
     ];
+    if (
+      request.aggregationType !== undefined &&
+      request.aggregationType !== "auto" &&
+      (request.aggregationType !== "byPage" ||
+        !request.dimensions.includes("page"))
+    ) {
+      throw new AppError(
+        "GOOGLE_ADAPTER_UNSUPPORTED_REQUEST",
+        `The external Google adapter does not support aggregationType=${request.aggregationType}. Use the native local-oauth adapter for this request.`,
+        2,
+      );
+    }
+    if (request.dimensionFilterGroups !== undefined) {
+      if (request.dimensionFilterGroups.length > 1) {
+        throw new AppError(
+          "GOOGLE_ADAPTER_UNSUPPORTED_REQUEST",
+          "The external Google adapter supports one AND filter group per Search Console request.",
+          2,
+        );
+      }
+      const filters = request.dimensionFilterGroups[0]?.filters ?? [];
+      options.push(
+        "--filters-json",
+        JSON.stringify(filters),
+      );
+    }
     const result = requireRecord(
       await this.run("gsc", options),
       "Search Console report",
@@ -220,6 +254,24 @@ export class ExternalGoogleDataProvider implements GoogleDataProvider {
       rows,
       ...(typeof result.responseAggregationType === "string"
         ? { responseAggregationType: result.responseAggregationType }
+        : {}),
+      ...(isRecord(result.metadata)
+        ? {
+            metadata: {
+              ...(typeof result.metadata.first_incomplete_date === "string"
+                ? {
+                    first_incomplete_date:
+                      result.metadata.first_incomplete_date,
+                  }
+                : {}),
+              ...(typeof result.metadata.first_incomplete_hour === "string"
+                ? {
+                    first_incomplete_hour:
+                      result.metadata.first_incomplete_hour,
+                  }
+                : {}),
+            },
+          }
         : {}),
     };
   }

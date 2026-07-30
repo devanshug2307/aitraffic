@@ -250,6 +250,10 @@ export class LocalGoogleDataProvider implements GoogleDataProvider {
           dimensions: request.dimensions.map((name) => ({ name })),
           metrics: request.metrics.map((name) => ({ name })),
           limit: String(request.limit ?? 10_000),
+          offset: String(request.offset ?? 0),
+          ...(request.dimensionFilter !== undefined
+            ? { dimensionFilter: request.dimensionFilter }
+            : {}),
           returnPropertyQuota: true,
         }),
       },
@@ -275,6 +279,15 @@ export class LocalGoogleDataProvider implements GoogleDataProvider {
           startRow: request.offset ?? 0,
           type: request.type ?? "web",
           dataState: request.dataState ?? "final",
+          ...(request.aggregationType !== undefined
+            ? { aggregationType: request.aggregationType }
+            : {}),
+          ...(request.dimensionFilterGroups !== undefined
+            ? {
+                dimensionFilterGroups:
+                  request.dimensionFilterGroups,
+              }
+            : {}),
         }),
       },
       "Search Console Search Analytics",

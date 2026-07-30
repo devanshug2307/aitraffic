@@ -135,6 +135,7 @@ Destructive actions such as editing pages, submitting changes, or changing crawl
 | [07-monetization-and-packaging.md](07-monetization-and-packaging.md) | Pricing, free/paid boundaries, buyer economics, cost drivers, and expansion revenue. |
 | [08-roadmap-and-validation.md](08-roadmap-and-validation.md) | What to ship first, what to defer, and how to validate willingness to pay. |
 | [09-source-register.md](09-source-register.md) | Primary sources, repositories, competitors, and community-demand evidence. |
+| [10-public-skills-integration-plan.md](10-public-skills-integration-plan.md) | Which public SEO/analytics skills to adapt, integrate, or reject, plus the ordered CLI/MCP/skill implementation plan. |
 
 ## Research rules
 
