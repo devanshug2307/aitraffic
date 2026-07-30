@@ -62,7 +62,8 @@ The first `0.4.0` value slice is implemented locally and remains unpublished:
 | Static HTML technical evidence | Complete locally | HTTP, metadata, canonical, headings, links, and JSON-LD syntax |
 | Single-page capability | Complete locally | `audit page`, `page audit`, and `site.page_audit` |
 | Opportunity-to-page orchestration | Complete locally | `audit opportunities --limit 5` and `site.audit_opportunities` |
-| Recursive crawl and sitemap coverage | Not started | Deferred until coverage can be represented honestly |
+| Bounded sitemap and static-link crawl | Complete locally in `0.5.1` | `crawl <URL>`, `site.crawl`, compact observations, explicit partial/truncated coverage |
+| Unbounded or rendered crawl | Not started | Deliberately excluded; rendering remains a later sampled mode |
 | Public first-party router skill | Not started | Planned for `0.6.0` |
 
 This slice answers the first useful question—“which pages should I review now,
@@ -112,7 +113,8 @@ The current local `0.3.0` implementation already provides a strong platform laye
 | Evidence JSON Schema | Complete foundation | `schema evidence` |
 | MCP server | Complete foundation | Twelve read-only tools, including list/describe/run |
 | Bounded single-page technical audit | Complete locally | `audit page <URL>` |
-| Recursive technical site crawler | Missing | Deliberately deferred beyond the first `0.5.0` slice |
+| Bounded sitemap/static-link crawler | Complete locally | `crawl <URL> --limit 25` |
+| Rendered technical crawler | Missing | Deliberately deferred beyond `0.5.1` |
 | Dedicated first-party skills | Missing | Planned for `0.6.0` |
 | Local history and opportunity queue | Missing | Planned for `0.7.0` |
 | Reproducible prompt/citation panel | Missing | Planned for `0.8.0` |
@@ -569,10 +571,62 @@ ranking defects. It also does not claim orphan pages, broken destination links,
 sitemap completeness, selected canonicals, indexing, rankings, or AI citation
 eligibility from a single static fetch.
 
+### Implemented bounded crawl (`0.5.1`)
+
+The next local slice adds the shared `site.crawl` capability:
+
+```bash
+aitraffic crawl https://example.com --limit 25 --format json
+aitraffic capabilities run site.crawl \
+  --url https://example.com \
+  --limit 25 \
+  --format json
+```
+
+Discovery uses robots.txt sitemap declarations, an apex/www-scoped
+`/sitemap.xml` fallback, XML sitemap indexes, XML URL sets, text sitemaps, and
+static internal links. It reuses one robots response per origin, deduplicates
+URLs without collapsing them onto canonicals, limits query variants, and
+retains discovery source plus sitemap `lastmod` when present.
+
+RSS and Atom feeds are valid Google sitemap formats but are not parsed in this
+slice; they remain explicit unsupported-format coverage instead of being
+silently treated as empty.
+
+The output is intentionally compact for agents. Each page has a single
+observation containing response and indexability state plus counts rather than
+raw HTML, full link arrays, or every heading. Page findings are remapped to
+that observation. Site rules cover only defensible relationships:
+
+- sitemap-listed URL plus observed `noindex`;
+- sitemap-listed URL declaring a different single canonical target;
+- sitemap-listed URLs that redirect, without calling redirects inherently bad;
+- duplicate non-empty titles within the audited set;
+- extracted internal links whose exact audited target returned `4xx` or `5xx`;
+- linked pages not observed in a successfully and completely parsed sitemap set;
+- pages unlinked from other audited static pages only when the bounded crawl
+  itself is complete, with an explicit “not proof of orphaning” limitation.
+
+Primary-source boundaries come from the
+[Sitemaps protocol](https://www.sitemaps.org/protocol.html),
+[Google sitemap guidance](https://developers.google.com/search/docs/crawling-indexing/sitemaps/build-sitemap),
+[Google sitemap-index guidance](https://developers.google.com/search/docs/crawling-indexing/sitemaps/large-sitemaps),
+and [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309.html). In particular:
+
+- sitemap URLs must be absolute and are attempted exactly as listed;
+- a protocol sitemap can contain at most 50,000 URLs and 50 MB uncompressed,
+  while AItraffic deliberately applies a smaller configurable 10 MB safety cap;
+- sitemap submission and inclusion are hints, not indexing guarantees;
+- broader cross-site sitemap ownership cannot be verified by a local anonymous
+  crawler, so this slice stays within exact apex/www host variants;
+- partial, capped, unsupported, malformed, compressed-without-content-encoding,
+  or failed sitemap inputs remain explicit coverage limitations.
+
 ### Commands
 
-The commands below remain the expanded crawler roadmap; only the bounded
-commands listed in “Implemented first slice” are complete locally.
+The commands below remain the expanded crawler roadmap. `crawl` is complete
+locally; the report-specific shortcuts remain future aliases over the same
+capability and evidence.
 
 ```bash
 aitraffic crawl https://example.com --limit 500

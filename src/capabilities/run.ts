@@ -1,4 +1,8 @@
 import { auditPage, type PageAuditAnalysis } from "../analysis/pageAudit.js";
+import {
+  crawlSite,
+  type SiteCrawlAnalysis,
+} from "../analysis/siteCrawl.js";
 import { buildOpportunityAnalysis } from "../analysis/opportunities.js";
 import { createSiteHttpClient } from "../connectors/site/http.js";
 import type {
@@ -34,6 +38,10 @@ export interface CapabilityRunParameters {
   timeoutMs?: number;
   maxBytes?: number;
   maxRedirects?: number;
+  concurrency?: number;
+  sitemap?: "auto" | "none" | string;
+  maxSitemaps?: number;
+  maxSitemapBytes?: number;
 }
 
 type OpportunityAnalysis = Awaited<
@@ -55,6 +63,15 @@ export type PageAuditEnvelope = CapabilityRunEnvelope<
   PageAuditAnalysis["observations"][number],
   PageAuditAnalysis["findings"][number],
   PageAuditAnalysis["recommendations"][number]
+>;
+
+export type SiteCrawlEnvelope = CapabilityRunEnvelope<
+  SiteCrawlAnalysis["summary"] & {
+    pages: SiteCrawlAnalysis["pages"];
+  },
+  SiteCrawlAnalysis["observations"][number],
+  SiteCrawlAnalysis["findings"][number],
+  SiteCrawlAnalysis["recommendations"][number]
 >;
 
 export interface OpportunityPageAudit {
@@ -359,6 +376,105 @@ async function runPageAudit(
   };
 }
 
+async function runSiteCrawl(
+  parameters: CapabilityRunParameters,
+  context: CapabilityRunContext,
+): Promise<SiteCrawlEnvelope> {
+  if (!parameters.url) {
+    throw new AppError(
+      "MISSING_CRAWL_URL",
+      "site.crawl requires a URL.",
+    );
+  }
+  const startedAt = new Date().toISOString();
+  const analysis = await crawlSite(
+    parameters.url,
+    {
+      ...(parameters.limit !== undefined ? { limit: parameters.limit } : {}),
+      ...(parameters.concurrency !== undefined
+        ? { concurrency: parameters.concurrency }
+        : {}),
+      ...(parameters.sitemap !== undefined
+        ? { sitemap: parameters.sitemap }
+        : {}),
+      ...(parameters.maxSitemaps !== undefined
+        ? { maxSitemaps: parameters.maxSitemaps }
+        : {}),
+      ...(parameters.timeoutMs !== undefined
+        ? { timeoutMs: parameters.timeoutMs }
+        : {}),
+      ...(parameters.maxBytes !== undefined
+        ? { maxBytes: parameters.maxBytes }
+        : {}),
+      ...(parameters.maxSitemapBytes !== undefined
+        ? { maxSitemapBytes: parameters.maxSitemapBytes }
+        : {}),
+      ...(parameters.maxRedirects !== undefined
+        ? { maxRedirects: parameters.maxRedirects }
+        : {}),
+      ...(context.now !== undefined ? { now: context.now } : {}),
+    },
+    context.siteClient ?? createSiteHttpClient(),
+  );
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    run: {
+      id: capabilityRunId(),
+      capabilityId: "site.crawl",
+      startedAt,
+      completedAt: new Date().toISOString(),
+      mode: "read-only",
+    },
+    subject: {
+      profile: "public-web",
+      site: null,
+      ga4Property: null,
+      url: analysis.summary.requestedUrl,
+    },
+    sources: [
+      {
+        id: "src_sitemap",
+        provider: "public-web",
+        method: "bounded sitemap fetch and parse",
+        subject: analysis.summary.origin,
+        period: null,
+        retrievedAt: analysis.generatedAt,
+        evidenceClass: "observed",
+        caveats: [
+          "Only supported, same-origin sitemap documents reached within the configured limits are covered.",
+          "Sitemap inclusion is a hint, not proof of indexing.",
+        ],
+      },
+      {
+        id: "src_site_crawl",
+        provider: "public-web",
+        method: "bounded static HTTP crawl",
+        subject: analysis.summary.origin,
+        period: null,
+        retrievedAt: analysis.generatedAt,
+        evidenceClass: "observed",
+        caveats: [
+          "Static HTML only; JavaScript rendering was not performed.",
+          "See coverage and incompleteReasons before drawing site-wide conclusions.",
+        ],
+      },
+    ],
+    coverage: {
+      ...analysis.coverage,
+      sampled: false,
+    },
+    result: {
+      ...analysis.summary,
+      pages: analysis.pages,
+    },
+    observations: analysis.observations,
+    findings: analysis.findings,
+    recommendations: analysis.recommendations,
+    artifacts: [],
+    warnings: analysis.warnings,
+  };
+}
+
 function prioritizedPages(opportunities: GoogleOpportunityEnvelope, limit: number) {
   const priority = { high: 0, medium: 1, low: 2 } as const;
   const candidates = opportunities.findings
@@ -396,6 +512,17 @@ async function runOpportunityAudits(
   parameters: CapabilityRunParameters,
   context: CapabilityRunContext,
 ): Promise<OpportunityAuditEnvelope> {
+  if (
+    parameters.limit !== undefined &&
+    (!Number.isInteger(parameters.limit) ||
+      parameters.limit < 1 ||
+      parameters.limit > 20)
+  ) {
+    throw new AppError(
+      "INVALID_OPPORTUNITY_AUDIT_LIMIT",
+      "site.audit_opportunities limit must be an integer from 1 to 20.",
+    );
+  }
   const startedAt = new Date().toISOString();
   const opportunities = await runGoogleOpportunities(parameters, context);
   const selected = prioritizedPages(opportunities, parameters.limit ?? 5);
@@ -517,18 +644,29 @@ export function runCapability(
   context: CapabilityRunContext,
 ): Promise<OpportunityAuditEnvelope>;
 export function runCapability(
+  capabilityId: "site.crawl",
+  parameters: CapabilityRunParameters,
+  context: CapabilityRunContext,
+): Promise<SiteCrawlEnvelope>;
+export function runCapability(
   capabilityId: string,
   parameters: CapabilityRunParameters,
   context: CapabilityRunContext,
 ): Promise<
-  GoogleOpportunityEnvelope | PageAuditEnvelope | OpportunityAuditEnvelope
+  | GoogleOpportunityEnvelope
+  | PageAuditEnvelope
+  | OpportunityAuditEnvelope
+  | SiteCrawlEnvelope
 >;
 export async function runCapability(
   capabilityId: string,
   parameters: CapabilityRunParameters,
   context: CapabilityRunContext,
 ): Promise<
-  GoogleOpportunityEnvelope | PageAuditEnvelope | OpportunityAuditEnvelope
+  | GoogleOpportunityEnvelope
+  | PageAuditEnvelope
+  | OpportunityAuditEnvelope
+  | SiteCrawlEnvelope
 > {
   if (!describeCapability(capabilityId)) {
     throw new AppError(
@@ -541,6 +679,9 @@ export async function runCapability(
   }
   if (capabilityId === "site.page_audit") {
     return runPageAudit(parameters, context);
+  }
+  if (capabilityId === "site.crawl") {
+    return runSiteCrawl(parameters, context);
   }
   if (capabilityId === "site.audit_opportunities") {
     return runOpportunityAudits(parameters, context);

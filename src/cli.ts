@@ -88,6 +88,7 @@ Usage:
   aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N] [--offset N] [--type TYPE] [--data-state STATE] [--aggregation TYPE] [--filter DIMENSION:OPERATOR:EXPRESSION]
   aitraffic report acquisition [--days N]
   aitraffic opportunities [--days N] [--max-rows N] [--min-impressions N]
+  aitraffic crawl <URL> [--limit N] [--concurrency N] [--sitemap auto|none|URL] [--max-sitemaps N]
   aitraffic audit page <URL> [--timeout-ms N] [--max-bytes N] [--max-redirects N]
   aitraffic audit opportunities [--limit N] [--days N] [--max-rows N] [--min-impressions N]
   aitraffic capabilities list
@@ -456,6 +457,47 @@ function parseOpportunityAuditOptions(args: string[]) {
       ...opportunity.parameters,
       ...site.parameters,
       limit: positiveInteger(limit.value, 5, "--limit", 20),
+    },
+    remaining: site.remaining,
+  };
+}
+
+function parseCrawlOptions(args: string[]) {
+  const limit = extractOption(args, "--limit");
+  const concurrency = extractOption(limit.remaining, "--concurrency");
+  const sitemap = extractOption(concurrency.remaining, "--sitemap");
+  const maxSitemaps = extractOption(
+    sitemap.remaining,
+    "--max-sitemaps",
+  );
+  const maxSitemapBytes = extractOption(
+    maxSitemaps.remaining,
+    "--max-sitemap-bytes",
+  );
+  const site = parseSiteAuditOptions(maxSitemapBytes.remaining);
+  return {
+    parameters: {
+      ...site.parameters,
+      limit: positiveInteger(limit.value, 25, "--limit", 500),
+      concurrency: positiveInteger(
+        concurrency.value,
+        3,
+        "--concurrency",
+        10,
+      ),
+      sitemap: sitemap.value ?? "auto",
+      maxSitemaps: positiveInteger(
+        maxSitemaps.value,
+        20,
+        "--max-sitemaps",
+        100,
+      ),
+      maxSitemapBytes: positiveInteger(
+        maxSitemapBytes.value,
+        5 * 1024 * 1024,
+        "--max-sitemap-bytes",
+        10 * 1024 * 1024,
+      ),
     },
     remaining: site.remaining,
   };
@@ -942,6 +984,14 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
         ...(url.value !== undefined ? { url: url.value } : {}),
       };
       remaining = options.remaining;
+    } else if (capabilityId === "site.crawl") {
+      const url = extractOption(capabilityArgs, "--url");
+      const options = parseCrawlOptions(url.remaining);
+      parameters = {
+        ...options.parameters,
+        ...(url.value !== undefined ? { url: url.value } : {}),
+      };
+      remaining = options.remaining;
     } else if (capabilityId === "site.audit_opportunities") {
       const options = parseOpportunityAuditOptions(capabilityArgs);
       parameters = options.parameters;
@@ -964,15 +1014,41 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
         `Unknown capability: ${capabilityId}`,
       );
     }
-    const google =
-      capabilityId === "site.page_audit"
-        ? undefined
-        : await googleProvider();
+    const needsGoogle =
+      capabilityId === "google.opportunities" ||
+      capabilityId === "site.audit_opportunities";
+    const google = needsGoogle ? await googleProvider() : undefined;
     return success(
       "capabilities run",
       await runCapability(capabilityId, parameters, {
         ...(google !== undefined ? { google } : {}),
       }),
+    );
+  }
+
+  if (command === "crawl") {
+    const url = rest[0];
+    if (!url) {
+      throw new AppError(
+        "MISSING_CRAWL_URL",
+        "Usage: aitraffic crawl <URL>",
+      );
+    }
+    const options = parseCrawlOptions(rest.slice(1));
+    assertNoUnknownOptions(options.remaining);
+    if (options.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${options.remaining[0]}`,
+      );
+    }
+    return success(
+      "crawl",
+      await runCapability(
+        "site.crawl",
+        { url, ...options.parameters },
+        {},
+      ),
     );
   }
 

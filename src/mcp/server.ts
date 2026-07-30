@@ -107,9 +107,18 @@ export async function serveMcp(): Promise<void> {
           .min(1)
           .max(1_000_000)
           .optional(),
-        limit: z.number().int().min(1).max(20).optional(),
+        limit: z.number().int().min(1).max(500).optional(),
+        concurrency: z.number().int().min(1).max(10).optional(),
+        sitemap: z.string().optional(),
+        maxSitemaps: z.number().int().min(1).max(100).optional(),
         timeoutMs: z.number().int().min(1).max(30_000).optional(),
         maxBytes: z
+          .number()
+          .int()
+          .min(1)
+          .max(10 * 1024 * 1024)
+          .optional(),
+        maxSitemapBytes: z
           .number()
           .int()
           .min(1)
@@ -125,17 +134,23 @@ export async function serveMcp(): Promise<void> {
       maxRows,
       minImpressions,
       limit,
+      concurrency,
+      sitemap,
+      maxSitemaps,
       timeoutMs,
       maxBytes,
+      maxSitemapBytes,
       maxRedirects,
     }) => {
       if (!describeCapability(id)) {
         throw new Error(`Unknown capability: ${id}`);
       }
-      const google =
-        id === "site.page_audit"
-          ? undefined
-          : await selectedGoogleProvider(projectRoot);
+      const needsGoogle =
+        id === "google.opportunities" ||
+        id === "site.audit_opportunities";
+      const google = needsGoogle
+        ? await selectedGoogleProvider(projectRoot)
+        : undefined;
       return textResult(
         await runCapability(
           id,
@@ -145,8 +160,14 @@ export async function serveMcp(): Promise<void> {
             ...(maxRows !== undefined ? { maxRows } : {}),
             ...(minImpressions !== undefined ? { minImpressions } : {}),
             ...(limit !== undefined ? { limit } : {}),
+            ...(concurrency !== undefined ? { concurrency } : {}),
+            ...(sitemap !== undefined ? { sitemap } : {}),
+            ...(maxSitemaps !== undefined ? { maxSitemaps } : {}),
             ...(timeoutMs !== undefined ? { timeoutMs } : {}),
             ...(maxBytes !== undefined ? { maxBytes } : {}),
+            ...(maxSitemapBytes !== undefined
+              ? { maxSitemapBytes }
+              : {}),
             ...(maxRedirects !== undefined ? { maxRedirects } : {}),
           },
           { ...(google !== undefined ? { google } : {}) },

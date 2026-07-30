@@ -15,6 +15,7 @@ test("lists a compact, read-only capability registry", () => {
     [
       "google.opportunities",
       "site.page_audit",
+      "site.crawl",
       "site.audit_opportunities",
     ],
   );

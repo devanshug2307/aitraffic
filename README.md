@@ -24,6 +24,7 @@ The working alpha includes:
 - a shared capability registry and provenance/coverage run envelope;
 - a unified Google opportunity report joining GSC demand to GA4 landing outcomes;
 - a bounded public-page audit covering HTTP, redirects, robots, static metadata, canonicals, JSON-LD syntax, headings, and links;
+- a bounded apex/www-scoped sitemap and static-link crawler with explicit coverage and compact agent output;
 - a priority-page workflow that safely audits unique pages selected from GA4/GSC opportunities;
 - a local read-only MCP server with Google, log, and evidence tools;
 - Codex and Claude Code setup guidance;
@@ -43,6 +44,7 @@ npx -y aitraffic@latest doctor
 npx -y aitraffic@latest init --agent both --site https://example.com
 npx -y aitraffic@latest schema evidence --format json
 npx -y aitraffic@latest logs import access.log --format json
+npx -y aitraffic@latest crawl https://example.com --limit 25 --format json
 ```
 
 Connect Google directly:
@@ -87,7 +89,7 @@ aitraffic mcp serve
 Pin an exact version for reproducible automation:
 
 ```bash
-npx -y aitraffic@0.5.0 version
+npx -y aitraffic@0.5.1 version
 ```
 
 ## Terminal contract
@@ -124,6 +126,7 @@ aitraffic ga4 report [--start DATE] [--end DATE] [--dimensions CSV] [--metrics C
 aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N] [--offset N] [--type TYPE] [--data-state STATE] [--aggregation TYPE] [--filter DIMENSION:OPERATOR:EXPRESSION]
 aitraffic report acquisition [--days N]
 aitraffic opportunities [--days N] [--max-rows N] [--min-impressions N]
+aitraffic crawl <URL> [--limit N] [--concurrency N] [--sitemap auto|none|URL] [--max-sitemaps N] [--max-sitemap-bytes N]
 aitraffic audit page <URL> [--timeout-ms N] [--max-bytes N] [--max-redirects N]
 aitraffic page audit <URL> [--timeout-ms N] [--max-bytes N] [--max-redirects N]
 aitraffic audit opportunities [--limit N] [--days N] [--max-rows N] [--min-impressions N]
@@ -188,6 +191,34 @@ returned static response. Missing metadata means “not observed in returned
 HTML”; it does not prove that JavaScript rendering or search-engine processing
 cannot supply it. Canonicals remain hints, and JSON-LD parsing is not a
 Schema.org or rich-result eligibility verdict.
+
+## Bounded site crawl
+
+Discover apex/www-scoped pages from robots.txt sitemap declarations, XML sitemap
+indexes, XML or text sitemaps, and returned static internal links:
+
+```bash
+aitraffic crawl https://example.com --limit 25 --format json
+aitraffic crawl https://example.com \
+  --sitemap https://example.com/sitemap.xml \
+  --limit 100 \
+  --concurrency 3 \
+  --format json
+aitraffic capabilities describe site.crawl --format json
+```
+
+The crawl reuses robots.txt across pages, deduplicates normalized URLs, caps
+query variants, skips common non-page assets, and reports page, sitemap, byte,
+time, redirect, concurrency, and discovery limits. Compact page observations
+keep agent context manageable while retaining evidence references. Site-level
+findings can identify sitemap/noindex conflicts, sitemap/canonical conflicts,
+sitemap URLs that redirect, duplicate titles within the audited set, and
+internal links whose exact audited targets returned errors.
+
+Only call the crawl complete when `coverage.partial` and
+`coverage.truncated` are both false. Even then, it covers returned static HTML
+and supported apex/www-scoped sitemap sources—not JavaScript-rendered navigation,
+external sources, indexing, rankings, or AI citations.
 
 ## Codex
 

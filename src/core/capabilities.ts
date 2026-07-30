@@ -166,6 +166,90 @@ const CAPABILITY_DEFINITIONS = [
     ],
   },
   {
+    id: "site.crawl",
+    title: "Bounded sitemap and link crawl",
+    category: "technical-seo",
+    purpose:
+      "Discover pages from robots.txt, supported sitemaps, and static internal links, then produce bounded page-level and site-level technical evidence.",
+    sideEffects: "none",
+    costClass: "free",
+    inputSchema: {
+      type: "object",
+      required: ["url"],
+      properties: {
+        url: { type: "string", format: "uri" },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 500,
+          default: 25,
+        },
+        concurrency: {
+          type: "integer",
+          minimum: 1,
+          maximum: 10,
+          default: 3,
+        },
+        sitemap: {
+          description:
+            "Use auto discovery, disable sitemap discovery with none, or provide an exact same-origin sitemap URL.",
+          anyOf: [
+            { enum: ["auto", "none"] },
+            { type: "string", format: "uri" },
+          ],
+          default: "auto",
+        },
+        maxSitemaps: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+          default: 20,
+        },
+        timeoutMs: {
+          type: "integer",
+          minimum: 1,
+          maximum: 30000,
+          default: 10000,
+        },
+        maxBytes: {
+          type: "integer",
+          minimum: 1,
+          maximum: 10485760,
+          default: 2097152,
+        },
+        maxSitemapBytes: {
+          type: "integer",
+          minimum: 1,
+          maximum: 10485760,
+          default: 5242880,
+        },
+        maxRedirects: {
+          type: "integer",
+          minimum: 0,
+          maximum: 10,
+          default: 5,
+        },
+      },
+      additionalProperties: false,
+    },
+    outputContract: [
+      "coverage",
+      "result",
+      "findings",
+      "recommendations",
+      "observations",
+      "warnings",
+    ],
+    limitations: [
+      "The crawl is bounded by explicit page, sitemap, byte, time, redirect, concurrency, and URL-variant limits.",
+      "Static HTML only; JavaScript-rendered links and metadata are not observed.",
+      "Page and sitemap scope is limited to exact apex/www host variants; broader cross-site sitemap ownership cannot be verified locally.",
+      "This slice parses XML sitemap indexes, XML URL sets, and text sitemaps; RSS and Atom feeds are reported as unsupported.",
+      "Sitemap inclusion is a hint and does not prove crawling, indexing, rankings, or AI citations.",
+      "Compressed .xml.gz files require an HTTP content-encoding in this slice; raw gzip sitemap bodies are reported as unsupported coverage.",
+    ],
+  },
+  {
     id: "site.audit_opportunities",
     title: "Audit priority search opportunities",
     category: "technical-seo",

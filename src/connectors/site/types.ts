@@ -69,6 +69,28 @@ export interface ParsedRobots {
   sitemaps: string[];
 }
 
+export interface SitemapUrlEntry {
+  loc: string;
+  lastmod: string | null;
+}
+
+export interface SitemapChildEntry {
+  loc: string;
+  lastmod: string | null;
+}
+
+export interface ParsedSitemap {
+  format: "xml" | "text";
+  kind: "urlset" | "sitemapindex" | "unsupported";
+  urls: SitemapUrlEntry[];
+  childSitemaps: SitemapChildEntry[];
+  totalEntries: number;
+  retainedEntries: number;
+  truncated: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
 export interface ExtractedHeading {
   level: 1 | 2 | 3 | 4 | 5 | 6;
   text: string;

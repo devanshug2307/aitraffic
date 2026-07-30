@@ -1,6 +1,6 @@
 {
   "name": "aitraffic",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Open, agent-native evidence for AI and search acquisition.",
   "homepage": "https://aitraffic.dev",
   "repository": {
@@ -59,6 +59,7 @@
     "@modelcontextprotocol/server": "^2.0.0",
     "@napi-rs/keyring": "^1.3.0",
     "parse5": "^7.3.0",
+    "saxes": "^6.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

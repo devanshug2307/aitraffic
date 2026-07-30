@@ -13,6 +13,14 @@ export {
   type PageAuditRecommendation,
 } from "./analysis/pageAudit.js";
 export {
+  crawlSite,
+  type SiteCrawlAnalysis,
+  type SiteCrawlOptions,
+  type SiteCrawlPageObservation,
+  type SiteCrawlPageResult,
+  type SiteCrawlSitemapObservation,
+} from "./analysis/siteCrawl.js";
+export {
   buildOpportunityAnalysis,
   type LandingOutcome,
   type OpportunityAnalysis,
@@ -30,6 +38,7 @@ export {
   type OpportunityAuditEnvelope,
   type OpportunityPageAudit,
   type PageAuditEnvelope,
+  type SiteCrawlEnvelope,
 } from "./capabilities/run.js";
 export { extractHtmlDocument } from "./connectors/site/html.js";
 export { createSiteHttpClient } from "./connectors/site/http.js";
@@ -42,10 +51,14 @@ export {
   evaluateRobots,
   parseRobotsTxt,
 } from "./connectors/site/robots.js";
+export { parseSitemapDocument } from "./connectors/site/sitemap.js";
 export type {
   HtmlDocumentFacts,
   RobotsDecision,
   ParsedRobots,
+  ParsedSitemap,
+  SitemapChildEntry,
+  SitemapUrlEntry,
   SiteHostResolver,
   SiteHttpClient,
   SiteHttpRequestOptions,
