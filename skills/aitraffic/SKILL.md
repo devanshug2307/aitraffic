@@ -38,6 +38,8 @@ tool and command mappings.
   [recipes/seo-audit.md](recipes/seo-audit.md)
 - Search demand and conversion opportunities:
   [recipes/gsc-opportunities.md](recipes/gsc-opportunities.md)
+- Durable local audit work and workflow status:
+  [recipes/opportunity-queue.md](recipes/opportunity-queue.md)
 - AI assistant and search acquisition:
   [recipes/ai-acquisition.md](recipes/ai-acquisition.md)
 - Indexability, robots, canonical, redirects, or sitemap:
@@ -66,6 +68,8 @@ to remediation.
   human-run. Never request pasted tokens or secrets.
 - Treat project initialization as a local write. Explain its target before
   asking the user to run or approve it.
+- Treat opportunity synchronization and status updates as private local writes.
+  Show the dry run before applying them.
 - Use only documented capability inputs. Describe a capability before running
   it when its schema is not already visible.
 - Preserve static-versus-rendered, sampled-versus-complete, and

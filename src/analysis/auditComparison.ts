@@ -259,6 +259,12 @@ function technicalSnapshots(
   return result;
 }
 
+export function getTechnicalFindingSnapshots(
+  audit: FullAuditEnvelope,
+): TechnicalFindingSnapshot[] {
+  return [...technicalSnapshots(audit).values()];
+}
+
 function crawlConfiguration(
   audit: FullAuditEnvelope,
 ): FullAuditConfiguration["crawl"] | null {
@@ -484,6 +490,11 @@ function googleSnapshots(
   return result;
 }
 
+export function getGoogleFindingSnapshots(
+  audit: FullAuditEnvelope,
+): GoogleFindingSnapshot[] {
+  return [...googleSnapshots(audit).values()];
+}
 function periodLength(period: { start: string; end: string }): number {
   return (
     Math.round(

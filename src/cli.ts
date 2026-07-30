@@ -51,6 +51,12 @@ import {
   saveAuditRun,
 } from "./core/auditRuns.js";
 import {
+  explainQueuedOpportunity,
+  listQueuedOpportunities,
+  syncOpportunityQueue,
+  updateOpportunityStatus,
+} from "./core/opportunityQueue.js";
+import {
   type AgentIntegration,
   initializeProject,
 } from "./core/project.js";
@@ -98,6 +104,10 @@ Usage:
   aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N] [--offset N] [--type TYPE] [--data-state STATE] [--aggregation TYPE] [--filter DIMENSION:OPERATOR:EXPRESSION]
   aitraffic report acquisition [--days N]
   aitraffic opportunities [--days N] [--max-rows N] [--min-impressions N]
+  aitraffic opportunities sync (--from RUN_ID | --latest) [--dry-run]
+  aitraffic opportunities list [--status active|open|planned|dismissed|verified|all] [--observation present|not_observed|unknown|all] [--source technical|google-opportunity] [--priority critical|high|medium|low|info] [--site URL] [--limit N]
+  aitraffic opportunities explain <OPP_ID>
+  aitraffic opportunities update <OPP_ID> --status open|planned|dismissed --reason TEXT [--dry-run]
   aitraffic crawl <URL> [--limit N] [--concurrency N] [--sitemap auto|none|URL] [--max-sitemaps N]
   aitraffic audit <URL> [--save] [--google auto|off|required] [--technical-only] [--focus all|indexing|internal-links|structured-data] [--top N]
   aitraffic audit history [--limit N]
@@ -1316,6 +1326,177 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
       artifacts: [...audit.artifacts, artifact],
     };
     return success("audit", savedAudit);
+  }
+
+  if (command === "opportunities" && rest[0] === "sync") {
+    const from = extractOption(rest.slice(1), "--from");
+    const latest = takeFlag(from.remaining, "--latest");
+    const dryRun = takeFlag(latest.remaining, "--dry-run");
+    assertNoUnknownOptions(dryRun.remaining);
+    if (dryRun.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${dryRun.remaining[0]}`,
+      );
+    }
+    if ((from.value === undefined) === !latest.present) {
+      throw new AppError(
+        "INVALID_OPPORTUNITY_SYNC_SOURCE",
+        "Use exactly one of --from RUN_ID or --latest.",
+      );
+    }
+    let runId = from.value;
+    if (latest.present) {
+      const history = await listAuditRuns({ limit: 1 });
+      runId = history.runs[0]?.runId;
+      if (runId === undefined) {
+        throw new AppError(
+          "AUDIT_RUN_NOT_FOUND",
+          "No saved audit is available. Run aitraffic audit <URL> --save first.",
+        );
+      }
+    }
+    const saved = await readAuditRun(runId as string);
+    const sync = await syncOpportunityQueue(saved.stored.audit, {
+      dryRun: dryRun.present,
+    });
+    return success(
+      "opportunities sync",
+      sync.result,
+      sync.warnings,
+    );
+  }
+
+  if (command === "opportunities" && rest[0] === "list") {
+    const status = extractOption(rest.slice(1), "--status");
+    const observation = extractOption(status.remaining, "--observation");
+    const source = extractOption(observation.remaining, "--source");
+    const priority = extractOption(source.remaining, "--priority");
+    const site = extractOption(priority.remaining, "--site");
+    const limit = extractOption(site.remaining, "--limit");
+    assertNoUnknownOptions(limit.remaining);
+    if (limit.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${limit.remaining[0]}`,
+      );
+    }
+    if (site.value !== undefined) {
+      try {
+        new URL(site.value);
+      } catch {
+        throw new AppError(
+          "INVALID_SITE_URL",
+          `Invalid site URL: ${site.value}`,
+        );
+      }
+    }
+    return success(
+      "opportunities list",
+      await listQueuedOpportunities({
+        status: enumOption(
+          status.value,
+          "active",
+          "--status",
+          [
+            "active",
+            "open",
+            "planned",
+            "dismissed",
+            "verified",
+            "all",
+          ] as const,
+        ),
+        observation: enumOption(
+          observation.value,
+          "present",
+          "--observation",
+          ["present", "not_observed", "unknown", "all"] as const,
+        ),
+        ...(source.value === undefined
+          ? {}
+          : {
+              source: enumOption(
+                source.value,
+                "technical",
+                "--source",
+                ["technical", "google-opportunity"] as const,
+              ),
+            }),
+        ...(priority.value === undefined
+          ? {}
+          : {
+              priority: enumOption(
+                priority.value,
+                "medium",
+                "--priority",
+                ["critical", "high", "medium", "low", "info"] as const,
+              ),
+            }),
+        ...(site.value === undefined ? {} : { site: site.value }),
+        limit: positiveInteger(limit.value, 20, "--limit", 100),
+      }),
+    );
+  }
+
+  if (command === "opportunities" && rest[0] === "explain") {
+    const opportunityId = rest[1];
+    if (!opportunityId) {
+      throw new AppError(
+        "MISSING_OPPORTUNITY_ID",
+        "Usage: aitraffic opportunities explain <OPP_ID>",
+      );
+    }
+    if (rest.length > 2) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${rest[2]}`,
+      );
+    }
+    return success(
+      "opportunities explain",
+      await explainQueuedOpportunity(opportunityId),
+    );
+  }
+
+  if (command === "opportunities" && rest[0] === "update") {
+    const opportunityId = rest[1];
+    if (!opportunityId) {
+      throw new AppError(
+        "MISSING_OPPORTUNITY_ID",
+        "Usage: aitraffic opportunities update <OPP_ID> --status planned --reason TEXT --dry-run",
+      );
+    }
+    const status = extractOption(rest.slice(2), "--status");
+    const reason = extractOption(status.remaining, "--reason");
+    const dryRun = takeFlag(reason.remaining, "--dry-run");
+    assertNoUnknownOptions(dryRun.remaining);
+    if (dryRun.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${dryRun.remaining[0]}`,
+      );
+    }
+    if (status.value === undefined || reason.value === undefined) {
+      throw new AppError(
+        "MISSING_OPPORTUNITY_UPDATE",
+        "Both --status and --reason are required.",
+      );
+    }
+    return success(
+      "opportunities update",
+      await updateOpportunityStatus(
+        opportunityId,
+        enumOption(
+          status.value,
+          "open",
+          "--status",
+          ["open", "planned", "dismissed"] as const,
+        ),
+        reason.value,
+        { dryRun: dryRun.present },
+      ),
+    );
   }
 
   if (command === "opportunities") {

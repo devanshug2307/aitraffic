@@ -6,6 +6,8 @@ export {
 } from "./analysis/acquisition.js";
 export {
   compareAuditRuns,
+  getGoogleFindingSnapshots,
+  getTechnicalFindingSnapshots,
   type AuditComparison,
   type GoogleFindingSnapshot,
   type TechnicalFindingSnapshot,
@@ -176,6 +178,27 @@ export {
   type LogParseError,
   type LogParseResult,
 } from "./core/logs.js";
+export {
+  explainQueuedOpportunity,
+  listQueuedOpportunities,
+  opportunityQueuePath,
+  readOpportunityQueue,
+  syncOpportunityQueue,
+  updateOpportunityStatus,
+  type OpportunityHistoryEvent,
+  type OpportunityListItem,
+  type OpportunityObservationState,
+  type OpportunityQueueFilters,
+  type OpportunityQueuePriority,
+  type OpportunityQueueSource,
+  type OpportunityQueueStatus,
+  type OpportunityQueueStore,
+  type OpportunityQueueSummary,
+  type OpportunitySiteSync,
+  type OpportunityStatusUpdateResult,
+  type OpportunitySyncResult,
+  type QueuedOpportunity,
+} from "./core/opportunityQueue.js";
 export {
   cliExecutablePath,
   getAgentSetupCommands,

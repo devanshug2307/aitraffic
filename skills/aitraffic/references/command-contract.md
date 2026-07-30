@@ -40,6 +40,11 @@ aitraffic audit history --limit 10 --format json
 aitraffic audit show RUN_ID --format json
 aitraffic audit compare OLDER_RUN_ID NEWER_RUN_ID --format json
 aitraffic audit compare --latest --format json
+aitraffic opportunities sync --latest --dry-run --format json
+aitraffic opportunities sync --latest --format json
+aitraffic opportunities list --format json
+aitraffic opportunities explain OPP_ID --format json
+aitraffic opportunities update OPP_ID --status planned --reason "REASON" --dry-run --format json
 aitraffic crawl https://example.com --limit 25 --format json
 aitraffic audit page https://example.com/page --format json
 aitraffic opportunities --days 28 --format json
@@ -66,3 +71,5 @@ version such as `npx -y aitraffic@0.7.0`; do not silently execute
   read-only diagnostics.
 - Treat `aitraffic audit --save` as an opt-in private local write. The MCP
   `site.full_audit` capability remains read-only.
+- Treat opportunity queue sync and status update as private local writes.
+  Preview both with `--dry-run`; list and explain are read-only.

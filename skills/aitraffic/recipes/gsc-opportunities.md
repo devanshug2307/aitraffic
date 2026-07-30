@@ -11,6 +11,9 @@
    baseline CTR, clicks, trend, landing outcomes, confidence, and effort.
 5. Run `site.audit_opportunities` when technical page evidence will clarify the
    top opportunities.
+6. When the user wants durable work tracking, save a unified audit and route to
+   [opportunity-queue.md](opportunity-queue.md). Google opportunity absence is
+   not deterministic verification.
 6. Do not forecast clicks or revenue unless the user explicitly asks for a
    clearly labeled scenario model.
 

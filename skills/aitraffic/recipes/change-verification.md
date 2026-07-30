@@ -12,10 +12,13 @@
    `aitraffic audit compare <OLDER_RUN_ID> <NEWER_RUN_ID> --format json`.
    Match the target and crawl options. Treat `unknown` as a coverage limitation,
    not a pass or failure.
-5. For GSC or GA4 outcomes, use comparable later periods and preserve
+5. Preview `aitraffic opportunities sync --latest --dry-run --format json`,
+   then apply it after approval. A comparable technical resolution can move
+   the queue item to `verified`; Google absence cannot.
+6. For GSC or GA4 outcomes, use comparable later periods and preserve
    seasonality, incomplete-data, and external-change caveats.
-6. Say "associated with" rather than "caused" unless a suitable experiment
+7. Say "associated with" rather than "caused" unless a suitable experiment
    supports causality.
-7. Saved audits are private local evidence artifacts, not deployed change
+8. Saved audits are private local evidence artifacts, not deployed change
    records. Do not invent `change record`, `change verify`, or automatic
    rollback commands.

@@ -2,6 +2,7 @@ node_modules/
 dist/
 .aitraffic/cache/
 .aitraffic/credentials/
+.aitraffic/opportunities/
 .aitraffic/runs/
 .aitraffic/google.json
 .aitraffic/*.db

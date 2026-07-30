@@ -49,6 +49,7 @@ test("keeps every skill recipe and reference reachable and free of placeholders"
     "gsc-opportunities.md",
     "indexing-audit.md",
     "internal-links.md",
+    "opportunity-queue.md",
     "seo-audit.md",
     "setup-check.md",
     "structured-data.md",
@@ -132,6 +133,10 @@ test("documents only implemented CLI command families", async () => {
     "audit compare",
     "audit",
     "opportunities",
+    "opportunities sync",
+    "opportunities list",
+    "opportunities explain",
+    "opportunities update",
     "report acquisition",
     "crawlers",
   ];
@@ -144,6 +149,10 @@ test("documents only implemented CLI command families", async () => {
     "audit history --limit 10 --format json",
     "audit show RUN_ID --format json",
     "audit compare OLDER_RUN_ID NEWER_RUN_ID --format json",
+    "opportunities sync --latest --dry-run --format json",
+    "opportunities list --format json",
+    "opportunities explain OPP_ID --format json",
+    "opportunities update OPP_ID --status planned --reason \"REASON\" --dry-run --format json",
   ]) {
     assert.ok(commands.includes(required), `Missing skill command: ${required}`);
   }

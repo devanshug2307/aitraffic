@@ -57,13 +57,14 @@ The first `0.4.0` value slice is implemented locally and remains unpublished:
 | GA4 landing outcomes | Complete | Organic Search sessions, engagement, key events, and revenue joined by normalized path |
 | Unified agent workflow | Complete | `aitraffic opportunities --days 28` and `aitraffic_run` |
 | Saved run history / evidence retrieval | Complete locally in `0.7.0` | Opt-in private `.aitraffic/runs/` snapshots plus history/show/compare CLI |
+| Durable opportunity queue | Complete locally in `0.7.0` | Stable IDs, dry-run sync, list/explain/update, occurrence history, evidence state, and technical verification |
 | Safe public HTTP fetch and redirect policy | Complete locally | Public HTTP(S), default ports, DNS/IP validation on every hop, bounded time/bytes/redirects |
 | robots.txt parsing and Googlebot decision | Complete locally | RFC-style longest-match rule with allow on equal specificity |
 | Static HTML technical evidence | Complete locally | HTTP, metadata, canonical, headings, links, and JSON-LD syntax |
 | Single-page capability | Complete locally | `audit page`, `page audit`, and `site.page_audit` |
 | Opportunity-to-page orchestration | Complete locally | `audit opportunities --limit 5` and `site.audit_opportunities` |
 | Bounded sitemap and static-link crawl | Complete locally in `0.5.1` | `crawl <URL>`, `site.crawl`, compact observations, explicit partial/truncated coverage |
-| First-party agent router skill | Complete locally in `0.6.0` | One `aitraffic` skill, nine task recipes, four shared references, MCP-first/CLI-fallback workflow, and drift tests |
+| First-party agent router skill | Complete locally in `0.6.0` | One `aitraffic` skill, ten task recipes, four shared references, MCP-first/CLI-fallback workflow, and drift tests |
 | Unified technical and Google audit | Complete locally in `0.6.1` | `aitraffic audit <URL>` and `site.full_audit`; Google auto/off/required, property match guard, focus, compact priority order |
 | Coverage-aware audit comparison | Complete locally in `0.7.0` | Page changes; persistent/new/resolved/unknown technical findings; comparable Google opportunity movement |
 | Unbounded or rendered crawl | Not started | Deliberately excluded; rendering remains a later sampled mode |
@@ -118,8 +119,8 @@ The current local `0.3.0` implementation already provides a strong platform laye
 | Bounded single-page technical audit | Complete locally | `audit page <URL>` |
 | Bounded sitemap/static-link crawler | Complete locally | `crawl <URL> --limit 25` |
 | Rendered technical crawler | Missing | Deliberately deferred beyond `0.5.1` |
-| Dedicated first-party skills | Complete locally | First-party router plus nine bounded recipes |
-| Local history and opportunity queue | Partial | Private audit history and comparison complete; durable opportunity queue remains |
+| Dedicated first-party skills | Complete locally | First-party router plus ten bounded recipes |
+| Local history and opportunity queue | Complete locally | Private audit history, comparison, stable queue, and evidence-aware lifecycle |
 | Reproducible prompt/citation panel | Missing | Planned for `0.8.0` |
 
 The next work should extend this foundation rather than replace it with third-party skills.
@@ -913,45 +914,65 @@ coverage. A URL absent from the newer bounded crawl is `notObservedInNewer`,
 not removed. Google movement is withheld unless resources, period lengths, and
 source coverage are comparable.
 
-### Opportunity schema
+### Implemented opportunity queue
+
+```bash
+aitraffic opportunities sync --latest --dry-run --format json
+aitraffic opportunities sync --latest --format json
+aitraffic opportunities list --format json
+aitraffic opportunities explain OPP_ID --format json
+aitraffic opportunities update OPP_ID --status planned --reason "REASON" --dry-run --format json
+```
+
+The queue uses deterministic IDs across audit runs, increments occurrences for
+recurring findings, and stores bounded history privately under
+`.aitraffic/opportunities/`. Human workflow status is separate from evidence
+state. Only comparable deterministic technical evidence assigns `verified`;
+partial scope produces `unknown`, and Google disappearance produces
+`not_observed`. Sync is idempotent per run and rejects chronological rollback.
+
+### Implemented opportunity schema
 
 ```json
 {
-  "opportunity_id": "opp_...",
-  "kind": "gsc.low_ctr",
-  "site_id": "site_...",
-  "scope": {
-    "url": "https://example.com/page",
-    "query": "example query"
+  "id": "opp_...",
+  "source": "technical",
+  "kind": "TITLE_NOT_OBSERVED_STATIC_HTML_V1",
+  "generator": {
+    "id": "technical-finding-queue",
+    "version": "1.0.0",
+    "sourceRule": "TITLE_NOT_OBSERVED_STATIC_HTML_V1"
   },
-  "evidence_ids": ["evidence_1", "evidence_2"],
-  "evidence_class": "inferred",
-  "confidence": 0.86,
+  "site": "https://example.com/",
+  "scope": {
+    "urls": ["https://example.com/page"],
+    "query": null
+  },
+  "status": "planned",
+  "observationState": "present",
+  "priority": "medium",
+  "confidence": {
+    "label": "high",
+    "basis": "Deterministic rule over observed static evidence."
+  },
   "impact": {
-    "label": "medium",
-    "basis": "observed_impressions"
+    "basis": "Deterministic technical severity and rule."
   },
   "effort": {
-    "label": "small",
-    "basis": "title_and_description_review"
+    "label": "unknown",
+    "basis": "Repository or CMS implementation was not inspected."
   },
-  "reason": "High impressions and below-baseline CTR in the selected position band.",
-  "limitations": [],
-  "suggested_actions": [
-    {
-      "action_type": "content.metadata.review",
-      "write_required": true
-    }
-  ]
+  "evidence": {
+    "latestRunId": "run_...",
+    "evidenceRefs": ["ev_..."],
+    "occurrences": 2
+  }
 }
 ```
 
-### Commands
+### Deferred change-record commands
 
 ```bash
-aitraffic opportunities list
-aitraffic opportunities explain OPP_ID
-aitraffic opportunities export --format json
 aitraffic change propose OPP_ID --dry-run
 aitraffic change record --url URL --type title-update
 aitraffic change verify CHANGE_ID --after 28d

@@ -28,6 +28,7 @@ The working alpha includes:
 - a priority-page workflow that safely audits unique pages selected from GA4/GSC opportunities;
 - one unified audit that composes the bounded crawl with optional matching GSC/GA4 opportunity evidence and returns a compact deterministic priority order;
 - opt-in private local audit snapshots plus coverage-aware before/after comparison for technical findings, page signals, and comparable Google opportunities;
+- a durable local opportunity queue with stable IDs, dry-run synchronization, workflow status, evidence state, and comparable technical verification;
 - one first-party `aitraffic` skill that routes Codex and Claude Code through evidence-first setup, audit, opportunity, acquisition, internal-link, structured-data, and verification recipes;
 - a local read-only MCP server with Google, log, and evidence tools;
 - Codex and Claude Code setup guidance;
@@ -50,6 +51,8 @@ npx -y aitraffic@latest logs import access.log --format json
 npx -y aitraffic@latest crawl https://example.com --limit 25 --format json
 npx -y aitraffic@latest audit https://example.com --format json
 npx -y aitraffic@latest audit https://example.com --save --format json
+npx -y aitraffic@latest opportunities sync --latest --dry-run --format json
+npx -y aitraffic@latest opportunities list --format json
 npx -y aitraffic@latest audit compare --latest --format json
 ```
 
@@ -147,6 +150,10 @@ aitraffic ga4 report [--start DATE] [--end DATE] [--dimensions CSV] [--metrics C
 aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N] [--offset N] [--type TYPE] [--data-state STATE] [--aggregation TYPE] [--filter DIMENSION:OPERATOR:EXPRESSION]
 aitraffic report acquisition [--days N]
 aitraffic opportunities [--days N] [--max-rows N] [--min-impressions N]
+aitraffic opportunities sync (--from RUN_ID | --latest) [--dry-run]
+aitraffic opportunities list [--status active|open|planned|dismissed|verified|all] [--observation present|not_observed|unknown|all] [--source technical|google-opportunity] [--priority critical|high|medium|low|info] [--site URL] [--limit N]
+aitraffic opportunities explain <OPP_ID>
+aitraffic opportunities update <OPP_ID> --status open|planned|dismissed --reason TEXT [--dry-run]
 aitraffic crawl <URL> [--limit N] [--concurrency N] [--sitemap auto|none|URL] [--max-sitemaps N] [--max-sitemap-bytes N]
 aitraffic audit <URL> [--save] [--google auto|off|required] [--technical-only] [--opportunity-limit N] [--focus all|indexing|internal-links|structured-data] [--top N]
 aitraffic audit history [--limit N]
@@ -304,6 +311,43 @@ resolution requires the same target, matching crawl configuration, and
 complete untruncated coverage. Google opportunity movement appears only when
 both runs used the same GSC/GA4 resources, equal-length periods, and complete
 source coverage; it remains associative rather than causal evidence.
+
+## Local opportunity queue
+
+Turn a saved audit into durable, deduplicated work:
+
+```bash
+# Review the proposed queue changes first.
+aitraffic opportunities sync --latest --dry-run --format json
+
+# Apply the reviewed local queue update.
+aitraffic opportunities sync --latest --format json
+
+# The default view is active work that is currently observed.
+aitraffic opportunities list --format json
+aitraffic opportunities explain OPP_ID --format json
+
+# Review and then apply a human workflow decision.
+aitraffic opportunities update OPP_ID \
+  --status planned \
+  --reason "Prepare the smallest metadata patch" \
+  --dry-run \
+  --format json
+```
+
+The private queue is stored atomically at
+`.aitraffic/opportunities/queue.json` with stable opportunity IDs and bounded
+per-item history. Workflow status (`open`, `planned`, `dismissed`, `verified`)
+is separate from evidence state (`present`, `not_observed`, `unknown`).
+Humans can set `open`, `planned`, or `dismissed`; `verified` is reserved for a
+deterministic technical finding that disappears under comparable page or
+complete site coverage.
+
+Repeated findings increment an occurrence count instead of creating duplicate
+tasks. A verified finding that reappears is reopened. Missing or incompatible
+Google evidence becomes `unknown`; a Google opportunity that is absent from a
+compatible later period is only `not_observed`, never automatically verified.
+Sync rejects older runs after a newer site audit has already been processed.
 
 ## Codex
 
