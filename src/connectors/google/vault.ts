@@ -7,7 +7,8 @@ const PROFILE_INDEX_ACCOUNT = "profile-index";
 export interface GoogleOAuthClient {
   schemaVersion: "0.2.0";
   clientId: string;
-  clientSecret: string;
+  clientSecret?: string;
+  clientType?: "web" | "desktop";
   redirectUri: string;
   configuredAt: string;
 }
@@ -137,7 +138,11 @@ function parseClient(value: string): GoogleOAuthClient {
     !isRecord(parsed) ||
     parsed.schemaVersion !== "0.2.0" ||
     typeof parsed.clientId !== "string" ||
-    typeof parsed.clientSecret !== "string" ||
+    (parsed.clientSecret !== undefined &&
+      typeof parsed.clientSecret !== "string") ||
+    (parsed.clientType !== undefined &&
+      parsed.clientType !== "web" &&
+      parsed.clientType !== "desktop") ||
     typeof parsed.redirectUri !== "string" ||
     typeof parsed.configuredAt !== "string"
   ) {
@@ -147,13 +152,17 @@ function parseClient(value: string): GoogleOAuthClient {
       1,
     );
   }
-  return {
+  const client: GoogleOAuthClient = {
     schemaVersion: "0.2.0",
     clientId: parsed.clientId,
-    clientSecret: parsed.clientSecret,
+    clientType: parsed.clientType ?? "web",
     redirectUri: parsed.redirectUri,
     configuredAt: parsed.configuredAt,
   };
+  if (typeof parsed.clientSecret === "string") {
+    client.clientSecret = parsed.clientSecret;
+  }
+  return client;
 }
 
 function parseProfile(value: string): GoogleOAuthProfile {

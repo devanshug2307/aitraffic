@@ -24,7 +24,7 @@ The working alpha includes:
 - Codex and Claude Code setup guidance;
 - research and roadmap documentation under `docs/research/`.
 
-AItraffic does not yet include scheduled collection or a hosted connector. Native OAuth is local and bring-your-own-client: the person running the CLI creates the Google OAuth client, completes consent in Google, and keeps credentials in the OS credential store. Tokens are never printed or exposed through MCP.
+AItraffic does not yet include scheduled collection or a hosted connector. Native OAuth imports a Google Web application client from its downloaded JSON or a private environment file; no client secret is bundled in npm. The person running the CLI personally completes Google consent, and tokens stay in the OS credential store. Tokens are never printed or exposed through MCP.
 
 ## Quick start
 
@@ -38,11 +38,9 @@ npx -y aitraffic@latest logs import access.log --format json
 Connect Google directly:
 
 ```bash
-# Put GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and the exact redirect URI in
-# a private file. The default redirect is:
-# http://localhost:3000/api/auth/callback/google
+# Import a Google Web application client into the OS credential store.
 npx -y aitraffic@latest auth google configure \
-  --from-env-file /absolute/path/to/.env.google
+  --from-client-json /absolute/path/to/client_secret.json
 
 # You personally complete Google sign-in and consent in the browser.
 npx -y aitraffic@latest auth google login --profile work
@@ -61,7 +59,7 @@ npx -y aitraffic@latest google status --format json
 npx -y aitraffic@latest report acquisition --days 28 --format json
 ```
 
-Before login, enable the Google Analytics Data API, Google Analytics Admin API, and Search Console API in your Google Cloud project. Create a Web application OAuth client and register the redirect URI exactly. See the [Google connector guide](docs/guides/google-connector.md) for the complete setup and the optional TrafficClaw/external-adapter path.
+The dedicated AItraffic Google project is currently in Testing, so only listed test users can authorize it and refresh tokens may expire after seven days. Public zero-configuration OAuth requires a hosted token broker plus Google verification; the npm package does not distribute the Web client secret. See the [Google connector guide](docs/guides/google-connector.md) for the beta setup and optional TrafficClaw/external-adapter path.
 
 Install globally if you prefer the shorter executable:
 
@@ -76,7 +74,7 @@ aitraffic mcp serve
 Pin an exact version for reproducible automation:
 
 ```bash
-npx -y aitraffic@0.2.0 version
+npx -y aitraffic@0.2.1 version
 ```
 
 ## Terminal contract
@@ -98,7 +96,7 @@ aitraffic schema evidence
 aitraffic logs import <path>
 aitraffic crawlers <path>
 aitraffic classify <user-agent>
-aitraffic auth google configure --from-env-file PATH
+aitraffic auth google configure (--from-client-json PATH | --from-env-file PATH)
 aitraffic auth google login --profile NAME
 aitraffic auth google status [--profile NAME]
 aitraffic auth google revoke --profile NAME [--dry-run] [--local-only]

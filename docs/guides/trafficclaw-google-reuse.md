@@ -3,7 +3,7 @@
 ## Implementation status
 
 Milestones 1 and the first acquisition report in milestone 2 shipped in
-AItraffic 0.2.0. Native OAuth, named profiles, OS credential storage, direct
+AItraffic 0.2.1. Native OAuth, named profiles, OS credential storage, direct
 GA4/GSC inventory and reports, refresh/revoke, explicit project selection, and
 the compatible external command adapter are implemented. Hosted TrafficClaw
 sessions, scheduled history, realtime GA4, URL Inspection, and autonomous
@@ -92,7 +92,8 @@ Every connector result must identify:
 ## Terminal surface
 
 ```text
-aitraffic auth google configure --from-env-file /absolute/path/.env
+aitraffic auth google configure --from-client-json /absolute/path/client_secret.json
+# Or: aitraffic auth google configure --from-env-file /absolute/path/.env
 aitraffic auth google login --profile work
 aitraffic auth google status [--profile work]
 aitraffic auth google revoke --profile work

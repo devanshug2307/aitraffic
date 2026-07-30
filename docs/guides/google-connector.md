@@ -7,9 +7,44 @@ AItraffic supports two compatible read-only providers:
 
 Both providers implement the same `GoogleDataProvider` contract, so GA4, Search Console, acquisition reports, and MCP tools keep the same output shape.
 
-## Native OAuth: Google Cloud setup
+## Native OAuth beta
 
-In a Google Cloud project:
+AItraffic uses a Google **Web application** OAuth client and stores it in the
+operating-system credential store. Import the JSON downloaded from Google
+Cloud:
+
+```bash
+npx -y aitraffic@latest auth google configure \
+  --from-client-json /absolute/path/to/client_secret.json \
+  --format json
+```
+
+The JSON must contain a Web application client with an authorized loopback
+redirect URI. AItraffic copies the client ID and secret into macOS Keychain,
+Windows Credential Manager, or Linux Secret Service. It never returns the
+secret or writes it to project configuration. Delete or securely archive the
+downloaded source file after a successful import.
+
+The dedicated AItraffic Google Cloud project is a controlled beta:
+
+- Its publishing status is Testing.
+- Only explicitly listed test users can authorize it.
+- Google limits it to 100 test users before verification.
+- Testing-mode refresh tokens for these scopes may expire after seven days.
+- Users may see Google’s unverified-app warning.
+- The consent screen displays the **AItraffic** brand.
+
+Do not publish or share the downloaded Web client JSON. Public
+zero-configuration login requires an AItraffic-hosted OAuth broker, verified
+`aitraffic.dev` privacy and terms pages, a scope justification and demo video,
+and Google verification.
+
+The Google account completing consent must already have access to the relevant GA4 property and Search Console site.
+
+## Create or bring your own OAuth client
+
+Use `auth google configure` when you want a separate Google Cloud project,
+consent brand, quota, or verification lifecycle. In that project:
 
 1. Enable the **Google Analytics Data API**, **Google Analytics Admin API**, and **Google Search Console API**.
 2. Configure the Google OAuth consent screen. If the app is in testing, add the Google accounts that will connect as test users.
@@ -20,25 +55,20 @@ In a Google Cloud project:
    http://localhost:3000/api/auth/callback/google
    ```
 
-You can choose another loopback port or path, but the Google Cloud value and `GOOGLE_REDIRECT_URI` must be identical. AItraffic accepts only an HTTP loopback URI with an explicit port, no query, and no fragment.
+You can choose another loopback port or path, but the Google Cloud value and
+`GOOGLE_REDIRECT_URI` must be identical. AItraffic accepts only an HTTP
+loopback URI with an explicit port, no query, and no fragment.
 
-Google’s references:
+The simplest import is the downloaded Web client JSON:
 
-- [OAuth 2.0 for web server applications](https://developers.google.com/identity/protocols/oauth2/web-server)
-- [Google Analytics Data API quickstart](https://developers.google.com/analytics/devguides/reporting/data/v1/quickstart)
-- [Search Console OAuth authorization](https://developers.google.com/webmaster-tools/v1/how-tos/authorizing)
+```bash
+npx -y aitraffic@latest auth google configure \
+  --from-client-json /absolute/path/to/client_secret.json \
+  --format json
+```
 
-The Google account completing consent must already have access to the relevant GA4 property and Search Console site.
+Alternatively, create a private file outside source control:
 
-Google Cloud projects whose external consent screen remains in **Testing**
-typically receive refresh tokens that expire after seven days for these data
-scopes. Add test users while developing, then follow Google’s production and
-verification requirements before distributing one shared OAuth client. BYO
-client users control their own project and consent configuration.
-
-## Store the OAuth client securely
-
-Create a private file outside source control:
 
 ```dotenv
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
@@ -57,6 +87,19 @@ npx -y aitraffic@latest auth google configure \
 AItraffic copies the client configuration into macOS Keychain, Windows Credential Manager, or Linux Secret Service through native bindings. It rejects command-line fallback, file, and null credential backends. The client secret is never accepted as a CLI argument, written to `.aitraffic/google.json`, or returned in output.
 
 Delete the source environment file afterward if you do not need it for recovery. The file remains under your control; AItraffic does not modify it.
+
+Google Cloud projects whose external consent screen remains in **Testing**
+typically receive refresh tokens that expire after seven days for these data
+scopes. Add test users while developing, then follow Google’s production and
+verification requirements before distributing a shared OAuth client. BYO
+client users control their own project and consent configuration.
+
+Google’s references:
+
+- [OAuth 2.0 for installed apps](https://developers.google.com/identity/protocols/oauth2/native-app)
+- [OAuth 2.0 for web server applications](https://developers.google.com/identity/protocols/oauth2/web-server)
+- [Google Analytics Data API quickstart](https://developers.google.com/analytics/devguides/reporting/data/v1/quickstart)
+- [Search Console OAuth authorization](https://developers.google.com/webmaster-tools/v1/how-tos/authorizing)
 
 ## Connect named Google accounts
 

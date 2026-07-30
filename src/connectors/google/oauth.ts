@@ -57,6 +57,11 @@ interface LoginDependencies {
   onInstruction?: (message: string) => void;
 }
 
+interface AuthorizationCodeResult {
+  code: string;
+  redirectUri: string;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -121,8 +126,67 @@ export function validateGoogleRedirectUri(value: string): string {
   return redirect.toString();
 }
 
+export function parseGoogleOAuthClientJson(contents: string): {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+} {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch {
+    throw new AppError(
+      "GOOGLE_CLIENT_JSON_INVALID",
+      "Google OAuth client JSON is not valid JSON.",
+    );
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.web)) {
+    throw new AppError(
+      "GOOGLE_CLIENT_JSON_INVALID",
+      "Google OAuth client JSON must contain a Web application client.",
+    );
+  }
+  const clientId = parsed.web.client_id;
+  const clientSecret = parsed.web.client_secret;
+  const redirectUris = parsed.web.redirect_uris;
+  if (
+    typeof clientId !== "string" ||
+    clientId.trim() === "" ||
+    typeof clientSecret !== "string" ||
+    clientSecret.trim() === "" ||
+    !Array.isArray(redirectUris) ||
+    !redirectUris.every((value) => typeof value === "string")
+  ) {
+    throw new AppError(
+      "GOOGLE_CLIENT_JSON_INVALID",
+      "Google OAuth client JSON is missing required Web application fields.",
+    );
+  }
+  let redirectUri: string | undefined;
+  for (const value of redirectUris) {
+    try {
+      redirectUri = validateGoogleRedirectUri(value);
+      break;
+    } catch {
+      continue;
+    }
+  }
+  if (!redirectUri) {
+    throw new AppError(
+      "GOOGLE_CLIENT_JSON_INVALID",
+      "Google OAuth client JSON must include an authorized loopback redirect URI.",
+    );
+  }
+  return {
+    clientId: clientId.trim(),
+    clientSecret: clientSecret.trim(),
+    redirectUri,
+  };
+}
+
 export async function configureGoogleOAuthClient(options: {
-  envFile: string;
+  envFile?: string;
+  clientJsonFile?: string;
   vault: GoogleCredentialVault;
   now?: Date;
 }): Promise<{
@@ -130,31 +194,56 @@ export async function configureGoogleOAuthClient(options: {
   redirectUri: string;
   vaultBackend: { id: string; name: string };
 }> {
-  const envFile = path.resolve(options.envFile);
-  let values: Record<string, string>;
-  try {
-    values = parseEnvFile(await readFile(envFile, "utf8"));
-  } catch {
+  if (Boolean(options.envFile) === Boolean(options.clientJsonFile)) {
     throw new AppError(
-      "GOOGLE_ENV_FILE_UNREADABLE",
-      `Cannot read Google OAuth environment file: ${envFile}`,
+      "GOOGLE_OAUTH_CLIENT_SOURCE_INVALID",
+      "Provide exactly one Google OAuth client source.",
     );
   }
-  const clientId = values.GOOGLE_CLIENT_ID?.trim();
-  const clientSecret = values.GOOGLE_CLIENT_SECRET?.trim();
-  if (!clientId || !clientSecret) {
-    throw new AppError(
-      "GOOGLE_OAUTH_CLIENT_MISSING",
-      "Environment file must define GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.",
+  let clientId: string;
+  let clientSecret: string;
+  let redirectUri: string;
+  if (options.envFile) {
+    const envFile = path.resolve(options.envFile);
+    let values: Record<string, string>;
+    try {
+      values = parseEnvFile(await readFile(envFile, "utf8"));
+    } catch {
+      throw new AppError(
+        "GOOGLE_ENV_FILE_UNREADABLE",
+        `Cannot read Google OAuth environment file: ${envFile}`,
+      );
+    }
+    clientId = values.GOOGLE_CLIENT_ID?.trim() ?? "";
+    clientSecret = values.GOOGLE_CLIENT_SECRET?.trim() ?? "";
+    if (!clientId || !clientSecret) {
+      throw new AppError(
+        "GOOGLE_OAUTH_CLIENT_MISSING",
+        "Environment file must define GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.",
+      );
+    }
+    redirectUri = validateGoogleRedirectUri(
+      values.GOOGLE_REDIRECT_URI?.trim() || DEFAULT_REDIRECT_URI,
     );
+  } else {
+    const clientJsonFile = path.resolve(options.clientJsonFile ?? "");
+    let contents: string;
+    try {
+      contents = await readFile(clientJsonFile, "utf8");
+    } catch {
+      throw new AppError(
+        "GOOGLE_CLIENT_JSON_UNREADABLE",
+        `Cannot read Google OAuth client JSON: ${clientJsonFile}`,
+      );
+    }
+    ({ clientId, clientSecret, redirectUri } =
+      parseGoogleOAuthClientJson(contents));
   }
-  const redirectUri = validateGoogleRedirectUri(
-    values.GOOGLE_REDIRECT_URI?.trim() || DEFAULT_REDIRECT_URI,
-  );
   const client: GoogleOAuthClient = {
     schemaVersion: "0.2.0",
     clientId,
     clientSecret,
+    clientType: "web",
     redirectUri,
     configuredAt: (options.now ?? new Date()).toISOString(),
   };
@@ -202,6 +291,12 @@ export function buildGoogleAuthorizationUrl(options: {
 
 export function googleOAuthClientKey(clientId: string): string {
   return createHash("sha256").update(clientId).digest("base64url");
+}
+
+export async function resolveGoogleOAuthClient(
+  vault: GoogleCredentialVault,
+): Promise<GoogleOAuthClient | null> {
+  return vault.getClient();
 }
 
 export function hasRequiredGoogleScopes(scopes: string[]): boolean {
@@ -256,16 +351,20 @@ function openAuthorizationUrl(url: string): void {
 }
 
 async function receiveLocalAuthorizationCode(
-  authorizationUrl: string,
-  redirectUri: string,
+  options: {
+    clientId: string;
+    redirectUri: string;
+    state: string;
+    codeChallenge: string;
+  },
   expectedState: string,
   onInstruction?: (message: string) => void,
-): Promise<string> {
-  const redirect = new URL(redirectUri);
+): Promise<AuthorizationCodeResult> {
+  const redirect = new URL(options.redirectUri);
   const port = Number(redirect.port);
   const host = redirect.hostname === "[::1]" ? "::1" : redirect.hostname;
 
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<AuthorizationCodeResult>((resolve, reject) => {
     const browserHeaders = {
       "cache-control": "no-store",
       "content-security-policy": "default-src 'none'",
@@ -273,6 +372,7 @@ async function receiveLocalAuthorizationCode(
       "x-content-type-options": "nosniff",
     };
     let settled = false;
+    let activeRedirect = new URL(redirect);
     const finish = (error: Error | null, code?: string) => {
       if (settled) {
         return;
@@ -283,17 +383,17 @@ async function receiveLocalAuthorizationCode(
       if (error) {
         reject(error);
       } else if (code !== undefined) {
-        resolve(code);
+        resolve({ code, redirectUri: activeRedirect.toString() });
       }
     };
     const server = createServer((request, response) => {
       const requestUrl = new URL(
         request.url ?? "/",
-        `${redirect.protocol}//${redirect.host}`,
+        `${activeRedirect.protocol}//${activeRedirect.host}`,
       );
       if (
         request.method !== "GET" ||
-        requestUrl.pathname !== redirect.pathname
+        requestUrl.pathname !== activeRedirect.pathname
       ) {
         response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
         response.end("Not found");
@@ -345,6 +445,25 @@ async function receiveLocalAuthorizationCode(
       );
     });
     server.listen(port, host, () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        finish(
+          new AppError(
+            "GOOGLE_CALLBACK_UNAVAILABLE",
+            "Cannot determine the local Google OAuth callback address.",
+            1,
+          ),
+        );
+        return;
+      }
+      activeRedirect = new URL(redirect);
+      activeRedirect.port = String(address.port);
+      const authorizationUrl = buildGoogleAuthorizationUrl({
+        clientId: options.clientId,
+        redirectUri: activeRedirect.toString(),
+        state: options.state,
+        codeChallenge: options.codeChallenge,
+      });
       openAuthorizationUrl(authorizationUrl);
       onInstruction?.(
         `Complete Google consent in your browser. If a tab did not open, use:\n${authorizationUrl}`,
@@ -375,11 +494,19 @@ async function parseTokenResponse(response: Response): Promise<TokenResponse> {
     typeof parsed.access_token !== "string" ||
     typeof parsed.expires_in !== "number"
   ) {
+    const reason =
+      isRecord(parsed) &&
+      typeof parsed.error === "string" &&
+      /^[a-z_]{1,64}$/u.test(parsed.error)
+        ? parsed.error
+        : undefined;
     throw new AppError(
       "GOOGLE_TOKEN_EXCHANGE_FAILED",
       "Google did not issue a usable OAuth token.",
       1,
-      { status: response.status },
+      reason === undefined
+        ? { status: response.status }
+        : { status: response.status, reason },
     );
   }
   const token: TokenResponse = {
@@ -404,18 +531,22 @@ async function exchangeAuthorizationCode(options: {
   client: GoogleOAuthClient;
   code: string;
   verifier: string;
+  redirectUri: string;
 }): Promise<TokenResponse> {
+  const body = new URLSearchParams({
+    client_id: options.client.clientId,
+    code: options.code,
+    code_verifier: options.verifier,
+    grant_type: "authorization_code",
+    redirect_uri: options.redirectUri,
+  });
+  if (options.client.clientSecret) {
+    body.set("client_secret", options.client.clientSecret);
+  }
   const response = await options.fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: options.client.clientId,
-      client_secret: options.client.clientSecret,
-      code: options.code,
-      code_verifier: options.verifier,
-      grant_type: "authorization_code",
-      redirect_uri: options.client.redirectUri,
-    }),
+    body,
   });
   return parseTokenResponse(response);
 }
@@ -489,36 +620,53 @@ export async function loginGoogleOAuthProfile(
   vaultBackend: { id: string; name: string };
 }> {
   const profile = validateGoogleProfile(profileName);
-  const client = await vault.getClient();
+  const client = await resolveGoogleOAuthClient(vault);
   if (!client) {
     throw new AppError(
       "GOOGLE_OAUTH_CLIENT_NOT_CONFIGURED",
-      "Google OAuth client is not configured. Run aitraffic auth google configure.",
+      "Google OAuth client is unavailable. Run aitraffic auth google configure to use your own client.",
     );
   }
   const state = base64Url(randomBytes(32));
   const pkce = createPkcePair();
-  const authorizationUrl = buildGoogleAuthorizationUrl({
-    clientId: client.clientId,
-    redirectUri: client.redirectUri,
-    state,
-    codeChallenge: pkce.challenge,
-  });
-  const receiveCode =
-    dependencies.receiveAuthorizationCode ??
-    ((url, redirectUri, expectedState) =>
-      receiveLocalAuthorizationCode(
-        url,
+  let authorization: AuthorizationCodeResult;
+  if (dependencies.receiveAuthorizationCode) {
+    const redirectUri =
+      client.clientType === "desktop"
+        ? "http://127.0.0.1:3000/"
+        : client.redirectUri;
+    const authorizationUrl = buildGoogleAuthorizationUrl({
+      clientId: client.clientId,
+      redirectUri,
+      state,
+      codeChallenge: pkce.challenge,
+    });
+    authorization = {
+      code: await dependencies.receiveAuthorizationCode(
+        authorizationUrl,
         redirectUri,
-        expectedState,
-        dependencies.onInstruction,
-      ));
-  const code = await receiveCode(authorizationUrl, client.redirectUri, state);
+        state,
+      ),
+      redirectUri,
+    };
+  } else {
+    authorization = await receiveLocalAuthorizationCode(
+      {
+        clientId: client.clientId,
+        redirectUri: client.redirectUri,
+        state,
+        codeChallenge: pkce.challenge,
+      },
+      state,
+      dependencies.onInstruction,
+    );
+  }
   const token = await exchangeAuthorizationCode({
     fetch: dependencies.fetch ?? fetch,
     client,
-    code,
+    code: authorization.code,
     verifier: pkce.verifier,
+    redirectUri: authorization.redirectUri,
   });
   const grantedScopes =
     token.scopes.length > 0
@@ -604,7 +752,7 @@ export async function getGoogleOAuthStatus(
     expiresAt: string | null;
   }>;
 }> {
-  const client = await vault.getClient();
+  const client = await resolveGoogleOAuthClient(vault);
   const knownProfiles = await vault.listProfiles();
   const requested =
     profileName === undefined
@@ -648,7 +796,7 @@ export async function refreshGoogleOAuthProfile(options: {
       1,
     );
   }
-  const client = await options.vault.getClient();
+  const client = await resolveGoogleOAuthClient(options.vault);
   if (!client) {
     throw new AppError(
       "GOOGLE_OAUTH_CLIENT_NOT_CONFIGURED",
@@ -663,15 +811,18 @@ export async function refreshGoogleOAuthProfile(options: {
       1,
     );
   }
+  const body = new URLSearchParams({
+    client_id: client.clientId,
+    refresh_token: options.profile.refreshToken,
+    grant_type: "refresh_token",
+  });
+  if (client.clientSecret) {
+    body.set("client_secret", client.clientSecret);
+  }
   const response = await (options.fetch ?? fetch)(GOOGLE_TOKEN_URL, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: client.clientId,
-      client_secret: client.clientSecret,
-      refresh_token: options.profile.refreshToken,
-      grant_type: "refresh_token",
-    }),
+    body,
   });
   const token = await parseTokenResponse(response);
   const now = options.now ?? new Date();

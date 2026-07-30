@@ -3,6 +3,7 @@ import {
   googleOAuthClientKey,
   hasSafeGoogleScopes,
   refreshGoogleOAuthProfile,
+  resolveGoogleOAuthClient,
 } from "./oauth.js";
 import type {
   Ga4Property,
@@ -64,7 +65,7 @@ export class LocalGoogleDataProvider implements GoogleDataProvider {
         1,
       );
     }
-    const client = await this.vault.getClient();
+    const client = await resolveGoogleOAuthClient(this.vault);
     if (
       !client ||
       profile.clientKey !== googleOAuthClientKey(client.clientId)
@@ -144,7 +145,7 @@ export class LocalGoogleDataProvider implements GoogleDataProvider {
 
   async status(): Promise<GoogleConnectorStatus> {
     const [client, profiles, profile] = await Promise.all([
-      this.vault.getClient(),
+      resolveGoogleOAuthClient(this.vault),
       this.vault.listProfiles(),
       this.vault.getProfile(this.config.profile),
     ]);

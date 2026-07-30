@@ -55,7 +55,7 @@ Usage:
   aitraffic logs import <path>
   aitraffic crawlers <path>
   aitraffic classify <user-agent>
-  aitraffic auth google configure --from-env-file PATH
+  aitraffic auth google configure (--from-client-json PATH | --from-env-file PATH)
   aitraffic auth google login --profile NAME
   aitraffic auth google status [--profile NAME]
   aitraffic auth google revoke --profile NAME [--dry-run] [--local-only]
@@ -412,24 +412,32 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
     rest[1] === "configure"
   ) {
     const envFile = extractOption(rest.slice(2), "--from-env-file");
-    assertNoUnknownOptions(envFile.remaining);
-    if (envFile.remaining.length > 0) {
+    const clientJsonFile = extractOption(
+      envFile.remaining,
+      "--from-client-json",
+    );
+    assertNoUnknownOptions(clientJsonFile.remaining);
+    if (clientJsonFile.remaining.length > 0) {
       throw new AppError(
         "UNEXPECTED_ARGUMENT",
-        `Unexpected argument: ${envFile.remaining[0]}`,
+        `Unexpected argument: ${clientJsonFile.remaining[0]}`,
       );
     }
-    if (!envFile.value) {
+    if (Boolean(envFile.value) === Boolean(clientJsonFile.value)) {
       throw new AppError(
-        "MISSING_GOOGLE_ENV_FILE",
-        "--from-env-file is required. OAuth client secrets are never accepted as command-line values.",
+        "INVALID_GOOGLE_CLIENT_SOURCE",
+        "Provide exactly one of --from-client-json or --from-env-file. OAuth client secrets are never accepted as command-line values.",
       );
     }
     const vault = await createSystemGoogleVault();
+    const source =
+      envFile.value !== undefined
+        ? { envFile: envFile.value }
+        : { clientJsonFile: clientJsonFile.value ?? "" };
     return success(
       "auth google configure",
       await configureGoogleOAuthClient({
-        envFile: envFile.value,
+        ...source,
         vault,
       }),
       [

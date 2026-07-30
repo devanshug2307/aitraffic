@@ -13,6 +13,7 @@ import {
   googleOAuthClientKey,
   loginGoogleOAuthProfile,
   parseEnvFile,
+  parseGoogleOAuthClientJson,
   revokeGoogleOAuthProfile,
   validateGoogleRedirectUri,
 } from "../src/connectors/google/oauth.js";
@@ -53,6 +54,7 @@ function oauthClient(): GoogleOAuthClient {
     schemaVersion: "0.2.0",
     clientId: "client-id.apps.googleusercontent.com",
     clientSecret: "client-secret",
+    clientType: "web",
     redirectUri: "http://localhost:3000/api/auth/callback/google",
     configuredAt: "2026-07-30T00:00:00.000Z",
   };
@@ -161,6 +163,67 @@ test("stores OAuth client configuration only in the credential vault", async () 
   assert.equal(result.vaultBackend.id, "native-macos");
   assert.equal(JSON.stringify(result).includes("client-secret"), false);
   assert.equal((await vault.getClient())?.clientSecret, "client-secret");
+  assert.equal((await vault.getClient())?.clientType, "web");
+});
+
+test("imports Google Web application JSON without returning its secret", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "aitraffic-oauth-json-"));
+  const clientJsonFile = path.join(directory, "client.json");
+  await writeFile(
+    clientJsonFile,
+    JSON.stringify({
+      web: {
+        client_id: "json-client.apps.googleusercontent.com",
+        client_secret: "json-client-secret",
+        redirect_uris: [
+          "https://example.com/not-allowed",
+          "http://localhost:3000/api/auth/callback/google",
+        ],
+      },
+    }),
+    "utf8",
+  );
+  const store = new MemorySecretStore();
+  const vault = new SecureGoogleVault(store);
+  const result = await configureGoogleOAuthClient({
+    clientJsonFile,
+    vault,
+    now: new Date("2026-07-30T00:00:00.000Z"),
+  });
+
+  assert.equal(result.configured, true);
+  assert.equal(result.redirectUri, "http://localhost:3000/api/auth/callback/google");
+  assert.equal(
+    JSON.stringify(result).includes("json-client-secret"),
+    false,
+  );
+  assert.equal((await vault.getClient())?.clientId, "json-client.apps.googleusercontent.com");
+  assert.equal((await vault.getClient())?.clientSecret, "json-client-secret");
+});
+
+test("rejects installed-app JSON and non-loopback web redirects", () => {
+  assert.throws(() =>
+    parseGoogleOAuthClientJson(
+      JSON.stringify({
+        installed: {
+          client_id: "desktop-client",
+          client_secret: "desktop-secret",
+          redirect_uris: ["http://localhost"],
+        },
+      }),
+    ),
+  );
+  assert.throws(() =>
+    parseGoogleOAuthClientJson(
+      JSON.stringify({
+        web: {
+          client_id: "web-client",
+          client_secret: "web-secret",
+          redirect_uris: ["https://example.com/callback"],
+        },
+      }),
+    ),
+  );
 });
 
 test("completes login without returning tokens or authorization codes", async () => {

@@ -23,7 +23,7 @@ test("initializes a project without inventing credentials", async () => {
   assert.equal(result.config.siteUrl, "https://example.com");
   assert.ok(
     result.setup.codex?.includes(
-      "codex mcp add aitraffic -- npx -y aitraffic@0.2.0 mcp serve",
+      "codex mcp add aitraffic -- npx -y aitraffic@0.2.1 mcp serve",
     ),
   );
   assert.ok(result.setup.claudeCode?.includes("claude mcp add"));
@@ -37,7 +37,7 @@ test("uses the published package command outside the source checkout", async () 
 
   assert.equal(
     setup.codex,
-    "codex mcp add aitraffic -- npx -y aitraffic@0.2.0 mcp serve",
+    "codex mcp add aitraffic -- npx -y aitraffic@0.2.1 mcp serve",
   );
   assert.equal(
     doctor.checks.find((check) => check.id === "build")?.status,
