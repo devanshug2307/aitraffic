@@ -56,7 +56,7 @@ The first `0.4.0` value slice is implemented locally and remains unpublished:
 | Cannibalization candidates | Complete | multiple meaningful pages for the same returned query |
 | GA4 landing outcomes | Complete | Organic Search sessions, engagement, key events, and revenue joined by normalized path |
 | Unified agent workflow | Complete | `aitraffic opportunities --days 28` and `aitraffic_run` |
-| Saved run history / evidence retrieval | Not started | Planned for `0.7.0` |
+| Saved run history / evidence retrieval | Complete locally in `0.7.0` | Opt-in private `.aitraffic/runs/` snapshots plus history/show/compare CLI |
 | Safe public HTTP fetch and redirect policy | Complete locally | Public HTTP(S), default ports, DNS/IP validation on every hop, bounded time/bytes/redirects |
 | robots.txt parsing and Googlebot decision | Complete locally | RFC-style longest-match rule with allow on equal specificity |
 | Static HTML technical evidence | Complete locally | HTTP, metadata, canonical, headings, links, and JSON-LD syntax |
@@ -65,6 +65,7 @@ The first `0.4.0` value slice is implemented locally and remains unpublished:
 | Bounded sitemap and static-link crawl | Complete locally in `0.5.1` | `crawl <URL>`, `site.crawl`, compact observations, explicit partial/truncated coverage |
 | First-party agent router skill | Complete locally in `0.6.0` | One `aitraffic` skill, nine task recipes, four shared references, MCP-first/CLI-fallback workflow, and drift tests |
 | Unified technical and Google audit | Complete locally in `0.6.1` | `aitraffic audit <URL>` and `site.full_audit`; Google auto/off/required, property match guard, focus, compact priority order |
+| Coverage-aware audit comparison | Complete locally in `0.7.0` | Page changes; persistent/new/resolved/unknown technical findings; comparable Google opportunity movement |
 | Unbounded or rendered crawl | Not started | Deliberately excluded; rendering remains a later sampled mode |
 | Public first-party router skill | Complete locally in `0.6.0` | Install with `npx skills add devanshug2307/aitraffic --skill aitraffic` after the repository is pushed |
 
@@ -117,8 +118,8 @@ The current local `0.3.0` implementation already provides a strong platform laye
 | Bounded single-page technical audit | Complete locally | `audit page <URL>` |
 | Bounded sitemap/static-link crawler | Complete locally | `crawl <URL> --limit 25` |
 | Rendered technical crawler | Missing | Deliberately deferred beyond `0.5.1` |
-| Dedicated first-party skills | Missing | Planned for `0.6.0` |
-| Local history and opportunity queue | Missing | Planned for `0.7.0` |
+| Dedicated first-party skills | Complete locally | First-party router plus nine bounded recipes |
+| Local history and opportunity queue | Partial | Private audit history and comparison complete; durable opportunity queue remains |
 | Reproducible prompt/citation panel | Missing | Planned for `0.8.0` |
 
 The next work should extend this foundation rather than replace it with third-party skills.
@@ -889,6 +890,28 @@ The unified result:
 ### Goal
 
 Connect evidence to prioritization, reviewable action, and later outcome measurement.
+
+### Implemented local history foundation
+
+The first `0.7.0` slice implements the evidence baseline needed for honest
+verification:
+
+```bash
+aitraffic audit https://example.com --save --format json
+aitraffic audit history --format json
+aitraffic audit show RUN_ID --format json
+aitraffic audit compare OLDER_RUN_ID NEWER_RUN_ID --format json
+aitraffic audit compare --latest --format json
+```
+
+Saving is opt-in and CLI-only. Atomic private files under
+`.aitraffic/runs/` retain compact observations, configuration, coverage,
+findings, and provenance without raw HTML or credentials. Comparison uses
+stable rule-and-scope identities. Page findings can be marked resolved only
+when the page is re-observed; site-level findings require matching complete
+coverage. A URL absent from the newer bounded crawl is `notObservedInNewer`,
+not removed. Google movement is withheld unless resources, period lengths, and
+source coverage are comparable.
 
 ### Opportunity schema
 

@@ -35,6 +35,11 @@ aitraffic capabilities list --format json
 aitraffic capabilities describe site.crawl --format json
 aitraffic capabilities run site.crawl --url https://example.com --limit 25 --format json
 aitraffic audit https://example.com --google auto --format json
+aitraffic audit https://example.com --google auto --save --format json
+aitraffic audit history --limit 10 --format json
+aitraffic audit show RUN_ID --format json
+aitraffic audit compare OLDER_RUN_ID NEWER_RUN_ID --format json
+aitraffic audit compare --latest --format json
 aitraffic crawl https://example.com --limit 25 --format json
 aitraffic audit page https://example.com/page --format json
 aitraffic opportunities --days 28 --format json
@@ -45,7 +50,7 @@ aitraffic crawlers access.log --format json
 
 Prefer an installed executable, project-local dependency, or locally built
 checkout. If none exists, ask before retrieving a package and use an explicit
-version such as `npx -y aitraffic@0.6.1`; do not silently execute
+version such as `npx -y aitraffic@0.7.0`; do not silently execute
 `aitraffic@latest`. Pin every CI or reproducible automation command.
 
 ## Failure handling
@@ -59,3 +64,5 @@ version such as `npx -y aitraffic@0.6.1`; do not silently execute
 - Never retry OAuth or resource selection on the user's behalf.
 - Treat `aitraffic init` and interactive onboarding as local writes rather than
   read-only diagnostics.
+- Treat `aitraffic audit --save` as an opt-in private local write. The MCP
+  `site.full_audit` capability remains read-only.

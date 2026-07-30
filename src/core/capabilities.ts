@@ -37,6 +37,15 @@ export interface CapabilitySource {
   caveats: string[];
 }
 
+export interface CapabilityArtifact {
+  id: string;
+  kind: "audit-run";
+  path: string;
+  mediaType: "application/json";
+  sha256: string;
+  createdAt: string;
+}
+
 export interface CapabilityRunEnvelope<
   Result,
   Observation,
@@ -63,7 +72,7 @@ export interface CapabilityRunEnvelope<
   observations: Observation[];
   findings: Finding[];
   recommendations: Recommendation[];
-  artifacts: [];
+  artifacts: CapabilityArtifact[];
   warnings: string[];
 }
 

@@ -27,6 +27,7 @@ The working alpha includes:
 - a bounded apex/www-scoped sitemap and static-link crawler with explicit coverage and compact agent output;
 - a priority-page workflow that safely audits unique pages selected from GA4/GSC opportunities;
 - one unified audit that composes the bounded crawl with optional matching GSC/GA4 opportunity evidence and returns a compact deterministic priority order;
+- opt-in private local audit snapshots plus coverage-aware before/after comparison for technical findings, page signals, and comparable Google opportunities;
 - one first-party `aitraffic` skill that routes Codex and Claude Code through evidence-first setup, audit, opportunity, acquisition, internal-link, structured-data, and verification recipes;
 - a local read-only MCP server with Google, log, and evidence tools;
 - Codex and Claude Code setup guidance;
@@ -48,6 +49,8 @@ npx -y aitraffic@latest schema evidence --format json
 npx -y aitraffic@latest logs import access.log --format json
 npx -y aitraffic@latest crawl https://example.com --limit 25 --format json
 npx -y aitraffic@latest audit https://example.com --format json
+npx -y aitraffic@latest audit https://example.com --save --format json
+npx -y aitraffic@latest audit compare --latest --format json
 ```
 
 Connect Google directly:
@@ -107,7 +110,7 @@ approves the proposed diff.
 Pin an exact CLI version for reproducible automation:
 
 ```bash
-npx -y aitraffic@0.6.1 version
+npx -y aitraffic@0.7.0 version
 ```
 
 ## Terminal contract
@@ -145,7 +148,11 @@ aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N] 
 aitraffic report acquisition [--days N]
 aitraffic opportunities [--days N] [--max-rows N] [--min-impressions N]
 aitraffic crawl <URL> [--limit N] [--concurrency N] [--sitemap auto|none|URL] [--max-sitemaps N] [--max-sitemap-bytes N]
-aitraffic audit <URL> [--google auto|off|required] [--technical-only] [--opportunity-limit N] [--focus all|indexing|internal-links|structured-data] [--top N]
+aitraffic audit <URL> [--save] [--google auto|off|required] [--technical-only] [--opportunity-limit N] [--focus all|indexing|internal-links|structured-data] [--top N]
+aitraffic audit history [--limit N]
+aitraffic audit show <RUN_ID>
+aitraffic audit compare <OLDER_RUN_ID> <NEWER_RUN_ID>
+aitraffic audit compare --latest
 aitraffic audit page <URL> [--timeout-ms N] [--max-bytes N] [--max-redirects N]
 aitraffic page audit <URL> [--timeout-ms N] [--max-bytes N] [--max-redirects N]
 aitraffic audit opportunities [--limit N] [--days N] [--max-rows N] [--min-impressions N]
@@ -269,6 +276,34 @@ page fetches within the run. `--focus` filters only that priority list—the raw
 findings remain available. Priority is an operational review order, not a
 ranking or traffic forecast, and implementation effort stays unknown until the
 repository or CMS is inspected.
+
+## Local audit history and comparison
+
+Save a compact audit before and after a deployment, then compare the same
+observed scope:
+
+```bash
+aitraffic audit https://example.com --save --format json
+aitraffic audit history --limit 10 --format json
+aitraffic audit show RUN_ID --format json
+aitraffic audit compare OLDER_RUN_ID NEWER_RUN_ID --format json
+aitraffic audit compare --latest --format json
+```
+
+Saving is opt-in and CLI-only; `site.full_audit` remains a read-only MCP
+capability. Snapshots are gitignored under `.aitraffic/runs/`, with the
+directory restricted to the current user and JSON files written privately and
+atomically. They contain the compact audit envelope, not raw HTML, OAuth
+credentials, tokens, cookies, or request bodies.
+
+Comparison reports persistent, newly observed, resolved, and unknown technical
+findings; observable page-field changes; newly observed URLs; and URLs not
+observed in the newer run. It never labels the latter as deleted. A page-level
+finding is resolved only when that page was observed again. Site-level
+resolution requires the same target, matching crawl configuration, and
+complete untruncated coverage. Google opportunity movement appears only when
+both runs used the same GSC/GA4 resources, equal-length periods, and complete
+source coverage; it remains associative rather than causal evidence.
 
 ## Codex
 

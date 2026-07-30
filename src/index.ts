@@ -5,6 +5,12 @@ export {
   type AcquisitionReport,
 } from "./analysis/acquisition.js";
 export {
+  compareAuditRuns,
+  type AuditComparison,
+  type GoogleFindingSnapshot,
+  type TechnicalFindingSnapshot,
+} from "./analysis/auditComparison.js";
+export {
   gscSiteCoversUrl,
   prioritizeUnifiedFindings,
   sameApexWwwBoundary,
@@ -45,6 +51,7 @@ export {
   type CapabilityRunParameters,
   type GoogleOpportunityEnvelope,
   type FullAuditEnvelope,
+  type FullAuditConfiguration,
   type FullAuditGoogleStatus,
   type OpportunityAuditEnvelope,
   type OpportunityPageAudit,
@@ -138,6 +145,14 @@ export {
   type VerificationMethod,
 } from "./core/agentRegistry.js";
 export {
+  listAuditRuns,
+  readAuditRun,
+  saveAuditRun,
+  type AuditRunDescriptor,
+  type AuditRunList,
+  type StoredAuditRun,
+} from "./core/auditRuns.js";
+export {
   EVIDENCE_CLASSES,
   evidenceJsonSchema,
   type EvidenceClass,
@@ -147,6 +162,7 @@ export {
   describeCapability,
   listCapabilities,
   type CapabilityCoverage,
+  type CapabilityArtifact,
   type CapabilityDefinition,
   type CapabilityRunEnvelope,
   type CapabilitySideEffects,

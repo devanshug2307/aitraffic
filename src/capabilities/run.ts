@@ -100,10 +100,33 @@ export type FullAuditGoogleStatus =
   | "failed"
   | "included";
 
+export interface FullAuditConfiguration {
+  crawl: {
+    limit: number;
+    concurrency: number;
+    sitemap: "auto" | "none" | string;
+    maxSitemaps: number;
+    timeoutMs: number;
+    maxBytes: number;
+    maxSitemapBytes: number;
+    maxRedirects: number;
+  };
+  google: {
+    mode: "auto" | "off" | "required";
+    opportunityLimit: number;
+    days: number;
+    maxRows: number;
+    minImpressions: number;
+  };
+  focus: FullAuditFocus;
+  top: number;
+}
+
 export type FullAuditEnvelope = CapabilityRunEnvelope<
   {
     auditMode: "technical-only" | "technical-and-google";
     focus: FullAuditFocus;
+    configuration: FullAuditConfiguration;
     technical: {
       runId: string;
       coverage: CapabilityCoverage;
@@ -740,6 +763,7 @@ function fullAuditOptions(parameters: CapabilityRunParameters): {
   focus: FullAuditFocus;
   opportunityLimit: number;
   top: number;
+  configuration: FullAuditConfiguration;
 } {
   const google = parameters.google ?? "auto";
   if (!["auto", "off", "required"].includes(google)) {
@@ -782,6 +806,28 @@ function fullAuditOptions(parameters: CapabilityRunParameters): {
     focus: focus as FullAuditFocus,
     opportunityLimit,
     top,
+    configuration: {
+      crawl: {
+        limit: parameters.limit ?? 25,
+        concurrency: parameters.concurrency ?? 3,
+        sitemap: parameters.sitemap ?? "auto",
+        maxSitemaps: parameters.maxSitemaps ?? 20,
+        timeoutMs: parameters.timeoutMs ?? 10_000,
+        maxBytes: parameters.maxBytes ?? 2 * 1024 * 1024,
+        maxSitemapBytes:
+          parameters.maxSitemapBytes ?? 5 * 1024 * 1024,
+        maxRedirects: parameters.maxRedirects ?? 5,
+      },
+      google: {
+        mode: google as "auto" | "off" | "required",
+        opportunityLimit,
+        days: parameters.days ?? 28,
+        maxRows: parameters.maxRows ?? 50_000,
+        minImpressions: parameters.minImpressions ?? 100,
+      },
+      focus: focus as FullAuditFocus,
+      top,
+    },
   };
 }
 
@@ -1043,6 +1089,7 @@ async function runFullAudit(
           ? "technical-and-google"
           : "technical-only",
       focus: options.focus,
+      configuration: options.configuration,
       technical: {
         runId: crawl.run.id,
         coverage: crawl.coverage,

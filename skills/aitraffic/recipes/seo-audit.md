@@ -14,9 +14,14 @@
 5. Prioritize confirmed blockers and high-demand pages over cosmetic findings.
 6. Return no more than ten primary actions unless the user requests a complete
    backlog. Include affected URLs, evidence references, effort, and verification.
+7. When the user wants a repeatable baseline or later verification, use the CLI
+   fallback with `--save`; history is intentionally a local CLI write rather
+   than an MCP capability side effect.
 
 CLI fallback:
 
 ```bash
-aitraffic audit https://example.com --limit 25 --google auto --format json
+aitraffic audit https://example.com --limit 25 --google auto --save --format json
+aitraffic audit history --limit 10 --format json
+aitraffic audit compare --latest --format json
 ```

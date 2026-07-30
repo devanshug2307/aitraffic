@@ -5,9 +5,11 @@ import {
   acquisitionPeriods,
   buildAcquisitionReport,
 } from "./analysis/acquisition.js";
+import { compareAuditRuns } from "./analysis/auditComparison.js";
 import {
   runCapability,
   type CapabilityRunParameters,
+  type FullAuditEnvelope,
 } from "./capabilities/run.js";
 import {
   configureGoogleConnector,
@@ -43,6 +45,11 @@ import {
 } from "./core/capabilities.js";
 import { evidenceJsonSchema } from "./core/evidence.js";
 import { analyzeLogFile } from "./core/logs.js";
+import {
+  listAuditRuns,
+  readAuditRun,
+  saveAuditRun,
+} from "./core/auditRuns.js";
 import {
   type AgentIntegration,
   initializeProject,
@@ -92,7 +99,11 @@ Usage:
   aitraffic report acquisition [--days N]
   aitraffic opportunities [--days N] [--max-rows N] [--min-impressions N]
   aitraffic crawl <URL> [--limit N] [--concurrency N] [--sitemap auto|none|URL] [--max-sitemaps N]
-  aitraffic audit <URL> [--google auto|off|required] [--technical-only] [--focus all|indexing|internal-links|structured-data] [--top N]
+  aitraffic audit <URL> [--save] [--google auto|off|required] [--technical-only] [--focus all|indexing|internal-links|structured-data] [--top N]
+  aitraffic audit history [--limit N]
+  aitraffic audit show <RUN_ID>
+  aitraffic audit compare <OLDER_RUN_ID> <NEWER_RUN_ID>
+  aitraffic audit compare --latest
   aitraffic audit page <URL> [--timeout-ms N] [--max-bytes N] [--max-redirects N]
   aitraffic audit opportunities [--limit N] [--days N] [--max-rows N] [--min-impressions N]
   aitraffic capabilities list
@@ -1176,6 +1187,93 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
     );
   }
 
+  if (command === "audit" && rest[0] === "history") {
+    const limit = extractOption(rest.slice(1), "--limit");
+    assertNoUnknownOptions(limit.remaining);
+    if (limit.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${limit.remaining[0]}`,
+      );
+    }
+    const history = await listAuditRuns({
+      limit: positiveInteger(limit.value, 20, "--limit", 100),
+    });
+    return success(
+      "audit history",
+      { runs: history.runs },
+      history.warnings,
+    );
+  }
+
+  if (command === "audit" && rest[0] === "show") {
+    const runId = rest[1];
+    if (!runId) {
+      throw new AppError(
+        "MISSING_AUDIT_RUN_ID",
+        "Usage: aitraffic audit show <RUN_ID>",
+      );
+    }
+    if (rest.length > 2) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${rest[2]}`,
+      );
+    }
+    const saved = await readAuditRun(runId);
+    return success("audit show", {
+      storage: saved.descriptor,
+      audit: saved.stored.audit,
+    });
+  }
+
+  if (command === "audit" && rest[0] === "compare") {
+    const latest = takeFlag(rest.slice(1), "--latest");
+    assertNoUnknownOptions(latest.remaining);
+    let olderRunId: string;
+    let newerRunId: string;
+    if (latest.present) {
+      if (latest.remaining.length > 0) {
+        throw new AppError(
+          "UNEXPECTED_ARGUMENT",
+          `Unexpected argument: ${latest.remaining[0]}`,
+        );
+      }
+      const history = await listAuditRuns({ limit: 2 });
+      if (history.runs.length < 2) {
+        throw new AppError(
+          "AUDIT_COMPARISON_REQUIRES_TWO_RUNS",
+          "Save at least two audits before using audit compare --latest.",
+        );
+      }
+      olderRunId = history.runs[1]?.runId as string;
+      newerRunId = history.runs[0]?.runId as string;
+    } else {
+      if (latest.remaining.length !== 2) {
+        throw new AppError(
+          "INVALID_AUDIT_COMPARISON",
+          "Usage: aitraffic audit compare <OLDER_RUN_ID> <NEWER_RUN_ID>",
+        );
+      }
+      olderRunId = latest.remaining[0] as string;
+      newerRunId = latest.remaining[1] as string;
+    }
+    if (olderRunId === newerRunId) {
+      throw new AppError(
+        "SAME_AUDIT_RUN",
+        "Audit comparison requires two different run IDs.",
+      );
+    }
+    const [older, newer] = await Promise.all([
+      readAuditRun(olderRunId),
+      readAuditRun(newerRunId),
+    ]);
+    return success(
+      "audit compare",
+      compareAuditRuns(older.stored.audit, newer.stored.audit),
+    );
+  }
+
   if (command === "audit") {
     const url = rest[0];
     if (!url) {
@@ -1184,7 +1282,8 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
         "Usage: aitraffic audit <URL>",
       );
     }
-    const options = parseFullAuditOptions(rest.slice(1));
+    const save = takeFlag(rest.slice(1), "--save");
+    const options = parseFullAuditOptions(save.remaining);
     assertNoUnknownOptions(options.remaining);
     if (options.remaining.length > 0) {
       throw new AppError(
@@ -1196,21 +1295,27 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
       options.parameters.google === "off"
         ? undefined
         : await resolveOptionalGoogleDataProvider();
-    return success(
-      "audit",
-      await runCapability(
-        "site.full_audit",
-        { url, ...options.parameters },
-        {
-          ...(optionalGoogle?.google !== undefined
-            ? { google: optionalGoogle.google }
-            : {}),
-          ...(optionalGoogle?.unavailable !== undefined
-            ? { googleUnavailable: optionalGoogle.unavailable }
-            : {}),
-        },
-      ),
+    const audit = await runCapability(
+      "site.full_audit",
+      { url, ...options.parameters },
+      {
+        ...(optionalGoogle?.google !== undefined
+          ? { google: optionalGoogle.google }
+          : {}),
+        ...(optionalGoogle?.unavailable !== undefined
+          ? { googleUnavailable: optionalGoogle.unavailable }
+          : {}),
+      },
     );
+    if (!save.present) {
+      return success("audit", audit);
+    }
+    const artifact = await saveAuditRun(audit);
+    const savedAudit: FullAuditEnvelope = {
+      ...audit,
+      artifacts: [...audit.artifacts, artifact],
+    };
+    return success("audit", savedAudit);
   }
 
   if (command === "opportunities") {

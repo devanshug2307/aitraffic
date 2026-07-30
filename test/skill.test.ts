@@ -127,6 +127,9 @@ test("documents only implemented CLI command families", async () => {
     "crawl",
     "audit page",
     "audit opportunities",
+    "audit history",
+    "audit show",
+    "audit compare",
     "audit",
     "opportunities",
     "report acquisition",
@@ -137,6 +140,13 @@ test("documents only implemented CLI command families", async () => {
   );
 
   assert.ok(commands.length >= implemented.length);
+  for (const required of [
+    "audit history --limit 10 --format json",
+    "audit show RUN_ID --format json",
+    "audit compare OLDER_RUN_ID NEWER_RUN_ID --format json",
+  ]) {
+    assert.ok(commands.includes(required), `Missing skill command: ${required}`);
+  }
   for (const command of commands) {
     assert.ok(
       implemented.some(
