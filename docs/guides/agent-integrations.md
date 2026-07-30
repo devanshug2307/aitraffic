@@ -1,8 +1,26 @@
-# Codex and Claude Code Integration
+# Agent Integrations
 
 ## Design goal
 
 Agents should call stable commands and MCP tools rather than parse dashboards or receive raw credentials.
+
+## Guided setup
+
+For a human in a terminal, the onboarding wizard detects installed agents,
+existing registrations, local Google profiles, and project selections:
+
+```bash
+npx -y aitraffic@latest onboard
+```
+
+For Codex, Claude Code, scripts, or CI, use the non-interactive inspection:
+
+```bash
+npx -y aitraffic@latest onboard --check --format json
+```
+
+This command never prompts or writes. The direct CLI commands below remain the
+stable automation path.
 
 ## Local development
 
@@ -48,6 +66,25 @@ Explicit registration is also supported:
 claude mcp add --scope project aitraffic -- node "$PWD/dist/src/cli.js" mcp serve
 ```
 
+### Hermes
+
+```bash
+hermes mcp add aitraffic \
+  --command node \
+  --args "$PWD/dist/src/cli.js" mcp serve
+hermes mcp test aitraffic
+```
+
+Run `/reload-mcp` or restart Hermes after registration.
+
+### OpenClaw
+
+```bash
+openclaw mcp set aitraffic \
+  '{"command":"node","args":["dist/src/cli.js","mcp","serve"]}'
+openclaw mcp show aitraffic --json
+```
+
 ## Published npm package
 
 The public package can run without a global installation:
@@ -56,12 +93,14 @@ The public package can run without a global installation:
 npx -y aitraffic@latest version
 codex mcp add aitraffic -- npx -y aitraffic@latest mcp serve
 claude mcp add --scope user aitraffic -- npx -y aitraffic@latest mcp serve
+hermes mcp add aitraffic --command npx --args -y aitraffic@latest mcp serve
+openclaw mcp set aitraffic '{"command":"npx","args":["-y","aitraffic@latest","mcp","serve"]}'
 ```
 
 Pin a version in CI or another reproducible environment:
 
 ```bash
-npx -y aitraffic@0.2.1 version
+npx -y aitraffic@0.3.0 version
 ```
 
 The GitHub release remains an available fallback:

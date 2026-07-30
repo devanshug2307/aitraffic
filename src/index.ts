@@ -60,12 +60,29 @@ export {
 export {
   cliExecutablePath,
   getAgentSetupCommands,
+  getMcpLaunchCommand,
   initializeProject,
   projectConfigPath,
   readProjectConfig,
   resolveReadableProjectFile,
   type AgentIntegration,
+  type McpLaunchCommand,
+  type ProjectAgentTarget,
   type ProjectConfig,
   type ProjectInitialization,
 } from "./core/project.js";
+export {
+  buildAgentInstallCommand,
+  detectAgentTargets,
+  installAgentTarget,
+  renderAgentCommand,
+  type AgentDetection,
+  type AgentInstallCommand,
+  type AgentInstallResult,
+  type AgentTarget,
+} from "./onboarding/agents.js";
+export {
+  inspectOnboarding,
+  type OnboardingInspection,
+} from "./onboarding/wizard.js";
 export { SCHEMA_VERSION, VERSION } from "./core/version.js";

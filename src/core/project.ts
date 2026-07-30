@@ -11,13 +11,29 @@ import { fileURLToPath } from "node:url";
 import { AppError } from "./result.js";
 import { SCHEMA_VERSION, VERSION } from "./version.js";
 
-export type AgentIntegration = "codex" | "claude-code" | "both";
+export type AgentIntegration =
+  | "codex"
+  | "claude-code"
+  | "both"
+  | "custom";
+
+export type ProjectAgentTarget =
+  | "codex"
+  | "claude-code"
+  | "hermes"
+  | "openclaw";
+
+export interface McpLaunchCommand {
+  command: string;
+  args: string[];
+}
 
 export interface ProjectConfig {
   schemaVersion: typeof SCHEMA_VERSION;
   projectName: string;
   createdAt: string;
   agentIntegration: AgentIntegration;
+  agentTargets?: ProjectAgentTarget[];
   siteUrl?: string;
 }
 
@@ -38,6 +54,9 @@ export function projectConfigPath(cwd = process.cwd()): string {
 }
 
 function quoteShellArgument(value: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/u.test(value)) {
+    return value;
+  }
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
@@ -45,18 +64,49 @@ export function cliExecutablePath(): string {
   return fileURLToPath(new URL("../cli.js", import.meta.url));
 }
 
+export function getMcpLaunchCommand(
+  cwd = process.cwd(),
+): McpLaunchCommand {
+  const executable = cliExecutablePath();
+  return isWithin(path.resolve(cwd), path.resolve(executable))
+    ? {
+        command: "node",
+        args: [executable, "mcp", "serve"],
+      }
+    : {
+        command: "npx",
+        args: ["-y", `aitraffic@${VERSION}`, "mcp", "serve"],
+      };
+}
+
+function renderShellCommand(command: McpLaunchCommand): string {
+  return [command.command, ...command.args]
+    .map(quoteShellArgument)
+    .join(" ");
+}
+
 export function getAgentSetupCommands(cwd = process.cwd()): {
   codex: string;
   claudeCode: string;
+  hermes: string;
+  openclaw: string;
 } {
-  const executable = cliExecutablePath();
-  const command = isWithin(path.resolve(cwd), path.resolve(executable))
-    ? `node ${quoteShellArgument(executable)} mcp serve`
-    : `npx -y aitraffic@${VERSION} mcp serve`;
+  const launch = getMcpLaunchCommand(cwd);
+  const command = renderShellCommand(launch);
+  const openclawConfig = quoteShellArgument(
+    JSON.stringify({
+      command: launch.command,
+      args: launch.args,
+    }),
+  );
 
   return {
     codex: `codex mcp add aitraffic -- ${command}`,
     claudeCode: `claude mcp add --scope project aitraffic -- ${command}`,
+    hermes: `hermes mcp add aitraffic --command ${quoteShellArgument(launch.command)} --args ${launch.args
+      .map(quoteShellArgument)
+      .join(" ")}`,
+    openclaw: `openclaw mcp set aitraffic ${openclawConfig}`,
   };
 }
 
@@ -65,6 +115,7 @@ export async function initializeProject(options: {
   force?: boolean;
   siteUrl?: string;
   agentIntegration?: AgentIntegration;
+  agentTargets?: ProjectAgentTarget[];
 }): Promise<ProjectInitialization> {
   const cwd = options.cwd ?? process.cwd();
   const configPath = projectConfigPath(cwd);
@@ -101,6 +152,9 @@ export async function initializeProject(options: {
     createdAt: new Date().toISOString(),
     agentIntegration,
   };
+  if (options.agentTargets !== undefined) {
+    config.agentTargets = [...new Set(options.agentTargets)];
+  }
   if (options.siteUrl !== undefined) {
     config.siteUrl = options.siteUrl;
   }

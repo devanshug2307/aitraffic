@@ -4,13 +4,14 @@ Open, terminal-first evidence for how search engines and AI systems discover, cr
 
 The project is designed to be directly usable by humans, Codex, Claude Code, CI jobs, and any MCP-compatible agent.
 
-[aitraffic.dev](https://aitraffic.dev) · [npm](https://www.npmjs.com/package/aitraffic) · [GitHub](https://github.com/devanshug2307/aitraffic) · Apache-2.0 · Node.js 20+
+[aitraffic.dev](https://aitraffic.dev) · [npm](https://www.npmjs.com/package/aitraffic) · [GitHub](https://github.com/devanshug2307/aitraffic) · Apache-2.0 · Node.js 20.12+
 
 ## Current alpha
 
 The working alpha includes:
 
 - a zero-prompt CLI contract with human and JSON output;
+- guided local-first onboarding for Codex, Claude Code, Hermes, and OpenClaw;
 - project initialization and environment diagnostics;
 - a versioned evidence JSON Schema;
 - local Nginx/Apache combined-log and NDJSON import;
@@ -29,6 +30,11 @@ AItraffic does not yet include scheduled collection or a hosted connector. Nativ
 ## Quick start
 
 ```bash
+npx -y aitraffic@latest onboard
+
+# Read-only, machine-readable inspection for agents and CI.
+npx -y aitraffic@latest onboard --check --format json
+
 npx -y aitraffic@latest doctor
 npx -y aitraffic@latest init --agent both --site https://example.com
 npx -y aitraffic@latest schema evidence --format json
@@ -74,7 +80,7 @@ aitraffic mcp serve
 Pin an exact version for reproducible automation:
 
 ```bash
-npx -y aitraffic@0.2.1 version
+npx -y aitraffic@0.3.0 version
 ```
 
 ## Terminal contract
@@ -90,6 +96,9 @@ npx -y aitraffic@0.2.1 version
 ## Commands
 
 ```text
+aitraffic onboard [--dry-run]
+aitraffic onboard --check [--format json]
+aitraffic setup [--dry-run]
 aitraffic init [--agent codex|claude-code|both] [--site URL] [--force]
 aitraffic doctor
 aitraffic schema evidence
@@ -150,6 +159,9 @@ Claude Code should read [CLAUDE.md](CLAUDE.md), which points to the same enginee
 
 See [Agent integrations](docs/guides/agent-integrations.md) for local development, published-package, JSON, and security examples.
 
+The guided setup design and hosted-auth milestones are documented in the
+[onboarding roadmap](docs/product/onboarding-roadmap.md).
+
 The Google connector extraction and TrafficClaw hosted/local boundary is
 documented in the
 [TrafficClaw Google reuse plan](docs/guides/trafficclaw-google-reuse.md).
@@ -203,7 +215,7 @@ npm test
 npm run check
 ```
 
-Node.js 20 or newer is required.
+Node.js 20.12 or newer is required.
 
 ## License
 

@@ -38,6 +38,10 @@ import {
 } from "./core/result.js";
 import { VERSION } from "./core/version.js";
 import { serveMcp } from "./mcp/server.js";
+import {
+  inspectOnboarding,
+  runOnboardingWizard,
+} from "./onboarding/wizard.js";
 
 type OutputFormat = "text" | "json";
 
@@ -49,6 +53,9 @@ interface ParsedArguments {
 const HELP = `AItraffic — terminal-first AI visibility evidence
 
 Usage:
+  aitraffic onboard [--dry-run]
+  aitraffic onboard --check [--format json]
+  aitraffic setup [--dry-run]
   aitraffic init [--agent codex|claude-code|both] [--site URL] [--force]
   aitraffic doctor
   aitraffic schema evidence
@@ -73,6 +80,22 @@ Global options:
   --format text|json   Output mode; text is the default
   --json               Alias for --format json
   --help, -h           Show this help
+`;
+
+const ONBOARD_HELP = `AItraffic guided onboarding
+
+Usage:
+  aitraffic onboard
+  aitraffic onboard --dry-run
+  aitraffic onboard --check [--format json]
+  aitraffic onboard --non-interactive [--format json]
+  aitraffic setup
+
+Options:
+  --dry-run           Review choices without writing project or agent configuration
+  --check             Inspect project, agents, and Google state without prompting
+  --non-interactive   Alias for --check; never prompts or writes
+  --help, -h          Show this help
 `;
 
 function parseGlobalArguments(argv: string[]): ParsedArguments {
@@ -777,6 +800,51 @@ async function main(): Promise<void> {
         );
       }
       await serveMcp();
+      return;
+    }
+
+    if (
+      parsed.positional[0] === "onboard" ||
+      parsed.positional[0] === "setup"
+    ) {
+      const rest = parsed.positional.slice(1);
+      const dryRun = takeFlag(rest, "--dry-run");
+      const check = takeFlag(dryRun.remaining, "--check");
+      const nonInteractive = takeFlag(
+        check.remaining,
+        "--non-interactive",
+      );
+      const help =
+        nonInteractive.remaining.includes("--help") ||
+        nonInteractive.remaining.includes("-h");
+      const remaining = nonInteractive.remaining.filter(
+        (value) => value !== "--help" && value !== "-h",
+      );
+      assertNoUnknownOptions(remaining);
+      if (remaining.length > 0) {
+        throw new AppError(
+          "UNEXPECTED_ARGUMENT",
+          `Unexpected argument: ${remaining[0]}`,
+        );
+      }
+      if (help) {
+        emit(success("onboard help", ONBOARD_HELP), format);
+        return;
+      }
+      if (check.present || nonInteractive.present) {
+        emit(
+          success("onboard check", await inspectOnboarding()),
+          format,
+        );
+        return;
+      }
+      if (format === "json") {
+        throw new AppError(
+          "ONBOARDING_INTERACTIVE_JSON_UNSUPPORTED",
+          "Interactive onboarding cannot keep stdout as one JSON document. Use --check --format json, or run onboard in text mode.",
+        );
+      }
+      await runOnboardingWizard({ dryRun: dryRun.present });
       return;
     }
 

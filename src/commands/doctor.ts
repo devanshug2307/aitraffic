@@ -24,6 +24,8 @@ export interface DoctorReport {
   setup: {
     codex: string;
     claudeCode: string;
+    hermes: string;
+    openclaw: string;
   };
 }
 
@@ -38,11 +40,15 @@ async function fileExists(file: string): Promise<boolean> {
 
 export async function runDoctor(cwd = process.cwd()): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
-  const nodeMajor = Number(process.versions.node.split(".")[0]);
+  const [nodeMajor = 0, nodeMinor = 0] = process.versions.node
+    .split(".")
+    .map(Number);
+  const supportedNode =
+    nodeMajor > 20 || (nodeMajor === 20 && nodeMinor >= 12);
   checks.push({
     id: "node",
-    status: nodeMajor >= 20 ? "pass" : "fail",
-    message: `Node.js ${process.versions.node}; version 20 or newer is required.`,
+    status: supportedNode ? "pass" : "fail",
+    message: `Node.js ${process.versions.node}; version 20.12 or newer is required.`,
   });
 
   const configPath = projectConfigPath(cwd);
