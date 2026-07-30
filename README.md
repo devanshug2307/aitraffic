@@ -30,7 +30,8 @@ The working alpha includes:
 - opt-in private local audit snapshots plus coverage-aware before/after comparison for technical findings, page signals, and comparable Google opportunities;
 - a durable local opportunity queue with stable IDs, dry-run synchronization, workflow status, evidence state, and comparable technical verification;
 - one first-party `aitraffic` skill that routes Codex and Claude Code through evidence-first setup, audit, opportunity, acquisition, internal-link, structured-data, and verification recipes;
-- a local read-only MCP server with Google, log, and evidence tools;
+- a local read-only MCP server with Google, log, evidence, and opportunity
+  queue tools;
 - Codex and Claude Code setup guidance;
 - research and roadmap documentation under `docs/research/`.
 
@@ -348,6 +349,12 @@ tasks. A verified finding that reappears is reopened. Missing or incompatible
 Google evidence becomes `unknown`; a Google opportunity that is absent from a
 compatible later period is only `not_observed`, never automatically verified.
 Sync rejects older runs after a newer site audit has already been processed.
+
+With the project MCP server connected, Codex and Claude Code can use
+`list_opportunity_queue` and `explain_opportunity` instead of parsing terminal
+output. These tools only read the queue bound to the MCP server's current
+project. They do not crawl, contact Google, edit files, synchronize the queue,
+or change workflow status.
 
 ## Codex
 

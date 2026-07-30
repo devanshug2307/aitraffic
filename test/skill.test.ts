@@ -103,6 +103,8 @@ test("references only registered capabilities and MCP tools", async () => {
     "analyze_ai_acquisition",
     "analyze_log_file",
     "classify_user_agent",
+    "list_opportunity_queue",
+    "explain_opportunity",
   ]) {
     assert.match(serverSource, new RegExp(`"${tool}"`, "u"), tool);
     assert.match(combined, new RegExp(`\\b${tool}\\b`, "u"), tool);

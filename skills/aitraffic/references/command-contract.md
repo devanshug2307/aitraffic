@@ -25,6 +25,16 @@ Compatibility MCP tools include `google_connection_status`,
 `list_google_resources`, `run_gsc_report`, `run_ga4_report`,
 `analyze_ai_acquisition`, `analyze_log_file`, and `classify_user_agent`.
 
+For a queue already synchronized by the user, use:
+
+```text
+list_opportunity_queue
+explain_opportunity
+```
+
+Both are project-local reads. MCP deliberately does not expose queue
+synchronization or workflow status updates.
+
 ## CLI fallback
 
 Always request JSON for agent use:
@@ -72,4 +82,5 @@ version such as `npx -y aitraffic@0.7.0`; do not silently execute
 - Treat `aitraffic audit --save` as an opt-in private local write. The MCP
   `site.full_audit` capability remains read-only.
 - Treat opportunity queue sync and status update as private local writes.
-  Preview both with `--dry-run`; list and explain are read-only.
+  Preview both with `--dry-run`; `list_opportunity_queue` and
+  `explain_opportunity` are read-only MCP equivalents of the CLI reads.

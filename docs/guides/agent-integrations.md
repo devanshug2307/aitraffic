@@ -162,13 +162,20 @@ Agents can depend on:
 - `get_evidence_schema`
 - `classify_user_agent`
 - `analyze_log_file`
+- `list_opportunity_queue`
+- `explain_opportunity`
 - `google_connection_status`
 - `list_google_resources`
 - `run_ga4_report`
 - `run_gsc_report`
 - `analyze_ai_acquisition`
 
-All are read-only. `analyze_log_file` refuses paths outside the project unless the process is explicitly opted into broader access. Google tools use only the profile and resources selected through the CLI; credentials are never returned through MCP.
+All are read-only. `list_opportunity_queue` and `explain_opportunity` read only
+the private queue under the MCP server's current project and cannot synchronize
+or change workflow status. `analyze_log_file` refuses paths outside the project
+unless the process is explicitly opted into broader access. Google tools use
+only the profile and resources selected through the CLI; credentials are never
+returned through MCP.
 
 For new agent workflows, prefer:
 

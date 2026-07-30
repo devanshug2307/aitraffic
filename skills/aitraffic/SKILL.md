@@ -69,7 +69,8 @@ to remediation.
 - Treat project initialization as a local write. Explain its target before
   asking the user to run or approve it.
 - Treat opportunity synchronization and status updates as private local writes.
-  Show the dry run before applying them.
+  Show the dry run before applying them. `list_opportunity_queue` and
+  `explain_opportunity` are read-only and cannot apply those changes.
 - Use only documented capability inputs. Describe a capability before running
   it when its schema is not already visible.
 - Preserve static-versus-rendered, sampled-versus-complete, and

@@ -115,7 +115,7 @@ The current local `0.3.0` implementation already provides a strong platform laye
 | Access-log parsing | Partial | `logs import`, `crawlers` |
 | Claimed agent classification | Partial | `classify` |
 | Evidence JSON Schema | Complete foundation | `schema evidence` |
-| MCP server | Complete foundation | Twelve read-only tools, including list/describe/run |
+| MCP server | Complete foundation | Fourteen read-only tools, including list/describe/run and project-local opportunity queue reads |
 | Bounded single-page technical audit | Complete locally | `audit page <URL>` |
 | Bounded sitemap/static-link crawler | Complete locally | `crawl <URL> --limit 25` |
 | Rendered technical crawler | Missing | Deliberately deferred beyond `0.5.1` |
@@ -318,7 +318,9 @@ aitraffic_apply_change
 aitraffic_verify_change
 ```
 
-This prevents dozens of report-specific MCP schemas from consuming agent context. The nine current read-only MCP tools can remain as compatibility shortcuts while the registry is introduced.
+This prevents dozens of report-specific MCP schemas from consuming agent
+context. The fourteen current read-only MCP tools can remain as compatibility
+shortcuts while the registry is introduced.
 
 Each user-facing workflow should then exist at four compatible layers:
 
