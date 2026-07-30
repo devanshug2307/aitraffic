@@ -57,7 +57,12 @@ The first `0.4.0` value slice is implemented locally and remains unpublished:
 | GA4 landing outcomes | Complete | Organic Search sessions, engagement, key events, and revenue joined by normalized path |
 | Unified agent workflow | Complete | `aitraffic opportunities --days 28` and `aitraffic_run` |
 | Saved run history / evidence retrieval | Not started | Planned for `0.7.0` |
-| Crawl and page-level technical evidence | Not started | Planned for `0.5.0` |
+| Safe public HTTP fetch and redirect policy | Complete locally | Public HTTP(S), default ports, DNS/IP validation on every hop, bounded time/bytes/redirects |
+| robots.txt parsing and Googlebot decision | Complete locally | RFC-style longest-match rule with allow on equal specificity |
+| Static HTML technical evidence | Complete locally | HTTP, metadata, canonical, headings, links, and JSON-LD syntax |
+| Single-page capability | Complete locally | `audit page`, `page audit`, and `site.page_audit` |
+| Opportunity-to-page orchestration | Complete locally | `audit opportunities --limit 5` and `site.audit_opportunities` |
+| Recursive crawl and sitemap coverage | Not started | Deferred until coverage can be represented honestly |
 | Public first-party router skill | Not started | Planned for `0.6.0` |
 
 This slice answers the first useful question—“which pages should I review now,
@@ -106,7 +111,8 @@ The current local `0.3.0` implementation already provides a strong platform laye
 | Claimed agent classification | Partial | `classify` |
 | Evidence JSON Schema | Complete foundation | `schema evidence` |
 | MCP server | Complete foundation | Twelve read-only tools, including list/describe/run |
-| Technical site crawler | Missing | Planned for `0.5.0` |
+| Bounded single-page technical audit | Complete locally | `audit page <URL>` |
+| Recursive technical site crawler | Missing | Deliberately deferred beyond the first `0.5.0` slice |
 | Dedicated first-party skills | Missing | Planned for `0.6.0` |
 | Local history and opportunity queue | Missing | Planned for `0.7.0` |
 | Reproducible prompt/citation panel | Missing | Planned for `0.8.0` |
@@ -523,7 +529,50 @@ The first opportunity types should be:
 
 Produce a local, deterministic site inventory that can support technical SEO, AEO/GEO eligibility, and reviewable fixes.
 
+### Implemented first slice
+
+The local `0.5.0` slice intentionally starts with one bounded page rather than
+claiming site-wide coverage:
+
+```bash
+aitraffic audit page https://example.com/page --format json
+aitraffic page audit https://example.com/page --format json
+aitraffic audit opportunities --limit 5 --format json
+aitraffic capabilities run site.page_audit --url https://example.com/page --format json
+```
+
+It observes HTTP status and redirects, the applicable robots.txt decision,
+static title and description, robots directives, canonicals, headings, links,
+and JSON-LD parse status. The opportunity workflow selects unique pages from
+the existing GSC/GA4 findings, retains their source finding references, and
+audits at most the requested limit. A failed page remains an explicit partial
+coverage item.
+
+Security is part of the collector contract: only public HTTP(S) URLs on default
+ports are accepted; credentials in URLs are rejected; every redirect target is
+resolved and checked; mixed public/private DNS answers are blocked; DNS results
+are pinned into the request; HTTPS downgrade and unrelated cross-host
+redirects are rejected; and response time, bytes, decompression, and redirects
+are bounded. Raw HTML and arbitrary response headers are not returned.
+
+Rule wording follows primary documentation:
+
+- [Google robots.txt documentation](https://developers.google.com/search/docs/crawling-indexing/robots/intro) and [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309) define crawler access behavior; robots.txt is not reported as a deindexing mechanism.
+- [Google robots meta documentation](https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag) supports direct `noindex` observations; intent is still reviewed before recommending a change.
+- [Google canonical documentation](https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls) treats a declared canonical as a hint, so a missing self-canonical is not automatically failed.
+- [Google title-link documentation](https://developers.google.com/search/docs/appearance/title-link) and [snippet documentation](https://developers.google.com/search/docs/appearance/snippet) support checking empty values without inventing universal character limits.
+- [Google structured-data guidance](https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data) requires feature-specific validation; this slice reports JSON syntax and extracted types, not rich-result eligibility.
+
+The current implementation deliberately does not flag H1 counts, heading
+sequence, title/description length, keyword density, or missing schema as
+ranking defects. It also does not claim orphan pages, broken destination links,
+sitemap completeness, selected canonicals, indexing, rankings, or AI citation
+eligibility from a single static fetch.
+
 ### Commands
+
+The commands below remain the expanded crawler roadmap; only the bounded
+commands listed in “Implemented first slice” are complete locally.
 
 ```bash
 aitraffic crawl https://example.com --limit 500

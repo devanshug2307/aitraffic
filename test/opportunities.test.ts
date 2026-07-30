@@ -14,6 +14,7 @@ import type {
   GscReportRequest,
   GscReportResponse,
 } from "../src/connectors/google/types.js";
+import type { SiteHttpClient } from "../src/connectors/site/types.js";
 
 const CONFIG = {
   schemaVersion: "0.1.0" as const,
@@ -245,8 +246,10 @@ test("returns the same opportunity workflow in a capability envelope", async () 
     "google.opportunities",
     { days: 28, maxRows: 100, minImpressions: 100 },
     {
-      config: CONFIG,
-      provider: new OpportunityProvider(),
+      google: {
+        config: CONFIG,
+        provider: new OpportunityProvider(),
+      },
       now: new Date("2026-07-30T12:00:00.000Z"),
     },
   );
@@ -258,6 +261,54 @@ test("returns the same opportunity workflow in a capability envelope", async () 
   assert.equal(envelope.findings.length > 0, true);
   assert.equal(envelope.coverage.partial, false);
   assert.equal(envelope.result.sourceCoverage.currentGsc.observedRows, 3);
+});
+
+test("audits a bounded set of unique Google opportunity pages", async () => {
+  const fetched: string[] = [];
+  const siteClient: SiteHttpClient = {
+    async get(url) {
+      fetched.push(url);
+      const robots = url.endsWith("/robots.txt");
+      const body = robots
+        ? "User-agent: *\nAllow: /"
+        : "<html><head><title>Page</title></head><body><h1>Page</h1></body></html>";
+      return {
+        requestedUrl: url,
+        finalUrl: url,
+        status: 200,
+        redirects: [],
+        headers: {
+          contentType: robots ? "text/plain" : "text/html",
+          contentLength: body.length,
+          contentEncoding: null,
+          xRobotsTag: [],
+        },
+        body,
+        byteLength: body.length,
+        bodyRead: "complete",
+        sha256: "test",
+        durationMs: 1,
+      };
+    },
+  };
+  const envelope = await runCapability(
+    "site.audit_opportunities",
+    { days: 28, maxRows: 100, minImpressions: 100, limit: 1 },
+    {
+      google: {
+        config: CONFIG,
+        provider: new OpportunityProvider(),
+      },
+      siteClient,
+      now: new Date("2026-07-30T12:00:00.000Z"),
+    },
+  );
+
+  assert.equal(envelope.result.selectedPages, 1);
+  assert.equal(envelope.result.completedAudits, 1);
+  assert.equal(envelope.result.pageAudits[0]?.sourceFindingRefs.length, 1);
+  assert.equal(fetched.length, 2);
+  assert.equal(envelope.coverage.partial, false);
 });
 
 class PaginatedProvider extends OpportunityProvider {

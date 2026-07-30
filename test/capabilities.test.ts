@@ -12,9 +12,13 @@ test("lists a compact, read-only capability registry", () => {
   const capabilities = listCapabilities();
   assert.deepEqual(
     capabilities.map(({ id }) => id),
-    ["google.opportunities"],
+    [
+      "google.opportunities",
+      "site.page_audit",
+      "site.audit_opportunities",
+    ],
   );
-  assert.equal(capabilities[0]?.sideEffects, "none");
+  assert.equal(capabilities.every(({ sideEffects }) => sideEffects === "none"), true);
   assert.deepEqual(capabilities[0]?.outputContract, [
     "coverage",
     "result",

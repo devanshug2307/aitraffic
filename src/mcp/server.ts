@@ -98,26 +98,58 @@ export async function serveMcp(): Promise<void> {
         "Run a registered read-only capability and return the shared evidence envelope.",
       inputSchema: z.object({
         id: z.string().describe("Capability ID returned by the list tool."),
-        days: z.number().int().min(1).max(366).default(28),
-        maxRows: z.number().int().min(1).max(100_000).default(50_000),
+        url: z.string().url().optional(),
+        days: z.number().int().min(1).max(366).optional(),
+        maxRows: z.number().int().min(1).max(100_000).optional(),
         minImpressions: z
           .number()
           .int()
           .min(1)
           .max(1_000_000)
-          .default(100),
+          .optional(),
+        limit: z.number().int().min(1).max(20).optional(),
+        timeoutMs: z.number().int().min(1).max(30_000).optional(),
+        maxBytes: z
+          .number()
+          .int()
+          .min(1)
+          .max(10 * 1024 * 1024)
+          .optional(),
+        maxRedirects: z.number().int().min(0).max(10).optional(),
       }),
     },
-    async ({ id, days, maxRows, minImpressions }) => {
+    async ({
+      id,
+      url,
+      days,
+      maxRows,
+      minImpressions,
+      limit,
+      timeoutMs,
+      maxBytes,
+      maxRedirects,
+    }) => {
       if (!describeCapability(id)) {
         throw new Error(`Unknown capability: ${id}`);
       }
-      const { config, provider } = await selectedGoogleProvider(projectRoot);
+      const google =
+        id === "site.page_audit"
+          ? undefined
+          : await selectedGoogleProvider(projectRoot);
       return textResult(
         await runCapability(
           id,
-          { days, maxRows, minImpressions },
-          { config, provider },
+          {
+            ...(url !== undefined ? { url } : {}),
+            ...(days !== undefined ? { days } : {}),
+            ...(maxRows !== undefined ? { maxRows } : {}),
+            ...(minImpressions !== undefined ? { minImpressions } : {}),
+            ...(limit !== undefined ? { limit } : {}),
+            ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+            ...(maxBytes !== undefined ? { maxBytes } : {}),
+            ...(maxRedirects !== undefined ? { maxRedirects } : {}),
+          },
+          { ...(google !== undefined ? { google } : {}) },
         ),
       );
     },

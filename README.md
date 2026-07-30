@@ -23,6 +23,8 @@ The working alpha includes:
 - an equal-period AI/search acquisition report with explicit limitations;
 - a shared capability registry and provenance/coverage run envelope;
 - a unified Google opportunity report joining GSC demand to GA4 landing outcomes;
+- a bounded public-page audit covering HTTP, redirects, robots, static metadata, canonicals, JSON-LD syntax, headings, and links;
+- a priority-page workflow that safely audits unique pages selected from GA4/GSC opportunities;
 - a local read-only MCP server with Google, log, and evidence tools;
 - Codex and Claude Code setup guidance;
 - research and roadmap documentation under `docs/research/`.
@@ -65,6 +67,8 @@ npx -y aitraffic@latest google select \
 # Review the dry run, then repeat without --dry-run.
 npx -y aitraffic@latest google status --format json
 npx -y aitraffic@latest opportunities --days 28 --format json
+npx -y aitraffic@latest audit page https://example.com/page --format json
+npx -y aitraffic@latest audit opportunities --limit 5 --format json
 npx -y aitraffic@latest report acquisition --days 28 --format json
 ```
 
@@ -83,7 +87,7 @@ aitraffic mcp serve
 Pin an exact version for reproducible automation:
 
 ```bash
-npx -y aitraffic@0.4.0 version
+npx -y aitraffic@0.5.0 version
 ```
 
 ## Terminal contract
@@ -120,9 +124,12 @@ aitraffic ga4 report [--start DATE] [--end DATE] [--dimensions CSV] [--metrics C
 aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N] [--offset N] [--type TYPE] [--data-state STATE] [--aggregation TYPE] [--filter DIMENSION:OPERATOR:EXPRESSION]
 aitraffic report acquisition [--days N]
 aitraffic opportunities [--days N] [--max-rows N] [--min-impressions N]
+aitraffic audit page <URL> [--timeout-ms N] [--max-bytes N] [--max-redirects N]
+aitraffic page audit <URL> [--timeout-ms N] [--max-bytes N] [--max-redirects N]
+aitraffic audit opportunities [--limit N] [--days N] [--max-rows N] [--min-impressions N]
 aitraffic capabilities list
 aitraffic capabilities describe <id>
-aitraffic capabilities run <id> [--days N] [--max-rows N] [--min-impressions N]
+aitraffic capabilities run <id> [capability options]
 aitraffic mcp serve
 aitraffic version
 ```
@@ -153,6 +160,34 @@ key events, and revenue by normalized URL path. Every response discloses row cap
 freshness, partial-data reasons, evidence references, inferred findings, and
 reviewable actions with a verification command. The join is aggregate evidence,
 not user-level attribution, and recommendations do not promise uplift.
+
+## Technical page evidence
+
+Run a single page audit without Google authentication:
+
+```bash
+aitraffic audit page https://example.com/page --format json
+aitraffic capabilities describe site.page_audit --format json
+aitraffic capabilities run site.page_audit \
+  --url https://example.com/page \
+  --format json
+```
+
+After connecting GA4 and Search Console, audit the highest-priority unique
+opportunity pages in one bounded run:
+
+```bash
+aitraffic audit opportunities --limit 5 --days 28 --format json
+```
+
+The fetcher accepts only public HTTP(S) URLs on default ports, resolves and
+validates every redirect hop, blocks private/reserved destinations and embedded
+credentials, respects an applicable Googlebot robots rule, limits redirects,
+response size, and time, and never returns raw HTML. Results describe only the
+returned static response. Missing metadata means “not observed in returned
+HTML”; it does not prove that JavaScript rendering or search-engine processing
+cannot supply it. Canonicals remain hints, and JSON-LD parsing is not a
+Schema.org or rich-result eligibility verdict.
 
 ## Codex
 

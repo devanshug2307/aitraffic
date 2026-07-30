@@ -31,7 +31,7 @@ export interface CapabilitySource {
   provider: string;
   method: string;
   subject: string;
-  period: { start: string; end: string };
+  period: { start: string; end: string } | null;
   retrievedAt: string;
   evidenceClass: "observed";
   caveats: string[];
@@ -55,6 +55,7 @@ export interface CapabilityRunEnvelope<
     profile: string;
     site: string | null;
     ga4Property: string | null;
+    url: string | null;
   };
   sources: CapabilitySource[];
   coverage: CapabilityCoverage;
@@ -113,6 +114,116 @@ const CAPABILITY_DEFINITIONS = [
       "Search Console returns top rows and can omit anonymized queries.",
       "GA4 and Search Console are joined at normalized landing-page path, not user or session level.",
       "Recommendations are deterministic heuristics, not traffic forecasts.",
+    ],
+  },
+  {
+    id: "site.page_audit",
+    title: "Static page technical audit",
+    category: "technical-seo",
+    purpose:
+      "Fetch one public page safely and report reproducible HTTP, robots, metadata, canonical, structured-data syntax, heading, and link observations.",
+    sideEffects: "none",
+    costClass: "free",
+    inputSchema: {
+      type: "object",
+      required: ["url"],
+      properties: {
+        url: { type: "string", format: "uri" },
+        timeoutMs: {
+          type: "integer",
+          minimum: 1,
+          maximum: 30000,
+          default: 10000,
+        },
+        maxBytes: {
+          type: "integer",
+          minimum: 1,
+          maximum: 10485760,
+          default: 2097152,
+        },
+        maxRedirects: {
+          type: "integer",
+          minimum: 0,
+          maximum: 10,
+          default: 5,
+        },
+      },
+      additionalProperties: false,
+    },
+    outputContract: [
+      "coverage",
+      "result",
+      "findings",
+      "recommendations",
+      "observations",
+      "warnings",
+    ],
+    limitations: [
+      "Checks only the returned static HTML; it does not render JavaScript.",
+      "A single-page audit cannot prove site-wide orphaning, sitemap completeness, or destination link health.",
+      "Declared canonicals are hints, and JSON-LD parsing does not prove rich-result eligibility.",
+      "Public HTTP(S) targets only; private, local, reserved, credential-bearing, and non-default-port URLs are blocked.",
+    ],
+  },
+  {
+    id: "site.audit_opportunities",
+    title: "Audit priority search opportunities",
+    category: "technical-seo",
+    purpose:
+      "Select high-value pages from Google opportunities and attach a bounded static technical audit to each unique public page.",
+    sideEffects: "none",
+    costClass: "free",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", minimum: 1, maximum: 366, default: 28 },
+        maxRows: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100000,
+          default: 50000,
+        },
+        minImpressions: {
+          type: "integer",
+          minimum: 1,
+          maximum: 1000000,
+          default: 100,
+        },
+        limit: { type: "integer", minimum: 1, maximum: 20, default: 5 },
+        timeoutMs: {
+          type: "integer",
+          minimum: 1,
+          maximum: 30000,
+          default: 10000,
+        },
+        maxBytes: {
+          type: "integer",
+          minimum: 1,
+          maximum: 10485760,
+          default: 2097152,
+        },
+        maxRedirects: {
+          type: "integer",
+          minimum: 0,
+          maximum: 10,
+          default: 5,
+        },
+      },
+      additionalProperties: false,
+    },
+    outputContract: [
+      "coverage",
+      "result",
+      "findings",
+      "recommendations",
+      "observations",
+      "warnings",
+    ],
+    limitations: [
+      "Page selection inherits Search Console and GA4 coverage limitations.",
+      "Audits at most the requested number of unique opportunity pages.",
+      "Checks returned static HTML only and does not render JavaScript.",
+      "A page fetch failure is reported as partial coverage rather than hidden.",
     ],
   },
 ] as const satisfies readonly CapabilityDefinition[];

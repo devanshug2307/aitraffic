@@ -5,7 +5,10 @@ import {
   acquisitionPeriods,
   buildAcquisitionReport,
 } from "./analysis/acquisition.js";
-import { runCapability } from "./capabilities/run.js";
+import {
+  runCapability,
+  type CapabilityRunParameters,
+} from "./capabilities/run.js";
 import {
   configureGoogleConnector,
   readGoogleConnectorConfig,
@@ -85,9 +88,11 @@ Usage:
   aitraffic gsc report [--start DATE] [--end DATE] [--dimensions CSV] [--limit N] [--offset N] [--type TYPE] [--data-state STATE] [--aggregation TYPE] [--filter DIMENSION:OPERATOR:EXPRESSION]
   aitraffic report acquisition [--days N]
   aitraffic opportunities [--days N] [--max-rows N] [--min-impressions N]
+  aitraffic audit page <URL> [--timeout-ms N] [--max-bytes N] [--max-redirects N]
+  aitraffic audit opportunities [--limit N] [--days N] [--max-rows N] [--min-impressions N]
   aitraffic capabilities list
   aitraffic capabilities describe <id>
-  aitraffic capabilities run <id> [--days N] [--max-rows N] [--min-impressions N]
+  aitraffic capabilities run <id> [capability options]
   aitraffic mcp serve
   aitraffic version
 
@@ -400,6 +405,59 @@ function parseOpportunityOptions(args: string[]): {
       ),
     },
     remaining: minImpressions.remaining,
+  };
+}
+
+function parseSiteAuditOptions(args: string[]): {
+  parameters: {
+    timeoutMs: number;
+    maxBytes: number;
+    maxRedirects: number;
+  };
+  remaining: string[];
+} {
+  const timeout = extractOption(args, "--timeout-ms");
+  const maxBytes = extractOption(timeout.remaining, "--max-bytes");
+  const maxRedirects = extractOption(
+    maxBytes.remaining,
+    "--max-redirects",
+  );
+  return {
+    parameters: {
+      timeoutMs: positiveInteger(
+        timeout.value,
+        10_000,
+        "--timeout-ms",
+        30_000,
+      ),
+      maxBytes: positiveInteger(
+        maxBytes.value,
+        2 * 1024 * 1024,
+        "--max-bytes",
+        10 * 1024 * 1024,
+      ),
+      maxRedirects: nonNegativeInteger(
+        maxRedirects.value,
+        5,
+        "--max-redirects",
+        10,
+      ),
+    },
+    remaining: maxRedirects.remaining,
+  };
+}
+
+function parseOpportunityAuditOptions(args: string[]) {
+  const opportunity = parseOpportunityOptions(args);
+  const limit = extractOption(opportunity.remaining, "--limit");
+  const site = parseSiteAuditOptions(limit.remaining);
+  return {
+    parameters: {
+      ...opportunity.parameters,
+      ...site.parameters,
+      limit: positiveInteger(limit.value, 5, "--limit", 20),
+    },
+    remaining: site.remaining,
   };
 }
 
@@ -873,12 +931,31 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
         "Usage: aitraffic capabilities run <id>",
       );
     }
-    const options = parseOpportunityOptions(rest.slice(2));
-    assertNoUnknownOptions(options.remaining);
-    if (options.remaining.length > 0) {
+    const capabilityArgs = rest.slice(2);
+    let parameters: CapabilityRunParameters;
+    let remaining: string[];
+    if (capabilityId === "site.page_audit") {
+      const url = extractOption(capabilityArgs, "--url");
+      const options = parseSiteAuditOptions(url.remaining);
+      parameters = {
+        ...options.parameters,
+        ...(url.value !== undefined ? { url: url.value } : {}),
+      };
+      remaining = options.remaining;
+    } else if (capabilityId === "site.audit_opportunities") {
+      const options = parseOpportunityAuditOptions(capabilityArgs);
+      parameters = options.parameters;
+      remaining = options.remaining;
+    } else {
+      const options = parseOpportunityOptions(capabilityArgs);
+      parameters = options.parameters;
+      remaining = options.remaining;
+    }
+    assertNoUnknownOptions(remaining);
+    if (remaining.length > 0) {
       throw new AppError(
         "UNEXPECTED_ARGUMENT",
-        `Unexpected argument: ${options.remaining[0]}`,
+        `Unexpected argument: ${remaining[0]}`,
       );
     }
     if (!describeCapability(capabilityId)) {
@@ -887,13 +964,64 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
         `Unknown capability: ${capabilityId}`,
       );
     }
-    const { config, provider } = await googleProvider();
+    const google =
+      capabilityId === "site.page_audit"
+        ? undefined
+        : await googleProvider();
     return success(
       "capabilities run",
-      await runCapability(capabilityId, options.parameters, {
-        config,
-        provider,
+      await runCapability(capabilityId, parameters, {
+        ...(google !== undefined ? { google } : {}),
       }),
+    );
+  }
+
+  if (
+    (command === "audit" && rest[0] === "page") ||
+    (command === "page" && rest[0] === "audit")
+  ) {
+    const url = rest[1];
+    if (!url) {
+      throw new AppError(
+        "MISSING_AUDIT_URL",
+        "Usage: aitraffic audit page <URL>",
+      );
+    }
+    const options = parseSiteAuditOptions(rest.slice(2));
+    assertNoUnknownOptions(options.remaining);
+    if (options.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${options.remaining[0]}`,
+      );
+    }
+    return success(
+      "audit page",
+      await runCapability(
+        "site.page_audit",
+        { url, ...options.parameters },
+        {},
+      ),
+    );
+  }
+
+  if (command === "audit" && rest[0] === "opportunities") {
+    const options = parseOpportunityAuditOptions(rest.slice(1));
+    assertNoUnknownOptions(options.remaining);
+    if (options.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${options.remaining[0]}`,
+      );
+    }
+    const google = await googleProvider();
+    return success(
+      "audit opportunities",
+      await runCapability(
+        "site.audit_opportunities",
+        options.parameters,
+        { google },
+      ),
     );
   }
 
@@ -910,8 +1038,7 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
     return success(
       "opportunities",
       await runCapability("google.opportunities", options.parameters, {
-        config,
-        provider,
+        google: { config, provider },
       }),
     );
   }

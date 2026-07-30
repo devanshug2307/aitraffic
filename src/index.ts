@@ -5,6 +5,14 @@ export {
   type AcquisitionReport,
 } from "./analysis/acquisition.js";
 export {
+  auditPage,
+  type PageAuditAnalysis,
+  type PageAuditFinding,
+  type PageAuditObservation,
+  type PageAuditOptions,
+  type PageAuditRecommendation,
+} from "./analysis/pageAudit.js";
+export {
   buildOpportunityAnalysis,
   type LandingOutcome,
   type OpportunityAnalysis,
@@ -18,7 +26,31 @@ export {
   runCapability,
   type CapabilityRunContext,
   type CapabilityRunParameters,
+  type GoogleOpportunityEnvelope,
+  type OpportunityAuditEnvelope,
+  type OpportunityPageAudit,
+  type PageAuditEnvelope,
 } from "./capabilities/run.js";
+export { extractHtmlDocument } from "./connectors/site/html.js";
+export { createSiteHttpClient } from "./connectors/site/http.js";
+export {
+  isPublicAddress,
+  normalizeAuditUrl,
+  resolvePublicAuditUrl,
+} from "./connectors/site/networkPolicy.js";
+export {
+  evaluateRobots,
+  parseRobotsTxt,
+} from "./connectors/site/robots.js";
+export type {
+  HtmlDocumentFacts,
+  RobotsDecision,
+  ParsedRobots,
+  SiteHostResolver,
+  SiteHttpClient,
+  SiteHttpRequestOptions,
+  SiteHttpResponse,
+} from "./connectors/site/types.js";
 export {
   configureGoogleConnector,
   googleConfigPath,

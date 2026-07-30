@@ -6,6 +6,8 @@ dist/
 .aitraffic/*.db
 .aitraffic/*.sqlite
 site/
+!src/connectors/site/
+!src/connectors/site/**
 .DS_Store
 *.log
 !examples/*.log

@@ -100,7 +100,7 @@ openclaw mcp set aitraffic '{"command":"npx","args":["-y","aitraffic@latest","mc
 Pin a version in CI or another reproducible environment:
 
 ```bash
-npx -y aitraffic@0.4.0 version
+npx -y aitraffic@0.5.0 version
 ```
 
 The GitHub release remains an available fallback:
