@@ -22,6 +22,29 @@ npx -y aitraffic@latest onboard --check --format json
 This command never prompts or writes. The direct CLI commands below remain the
 stable automation path.
 
+## First-party skill
+
+Install the canonical workflow skill at project scope:
+
+```bash
+npx -y skills add devanshug2307/aitraffic \
+  --skill aitraffic \
+  --agent codex claude-code \
+  --yes
+```
+
+The skill does not replace the MCP server. It teaches an agent to discover and
+run the registered read-only capabilities, inspect coverage before drawing
+conclusions, fall back to CLI JSON, and stop for approval before edits.
+
+Example prompt:
+
+```text
+Use $aitraffic to audit this site, combine Google opportunities when connected,
+rank the most useful fixes, and explain incomplete coverage. Do not edit files
+until I approve a proposed diff.
+```
+
 ## Local development
 
 ```bash
@@ -100,7 +123,7 @@ openclaw mcp set aitraffic '{"command":"npx","args":["-y","aitraffic@latest","mc
 Pin a version in CI or another reproducible environment:
 
 ```bash
-npx -y aitraffic@0.5.1 version
+npx -y aitraffic@0.6.0 version
 ```
 
 The GitHub release remains an available fallback:

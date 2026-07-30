@@ -26,6 +26,7 @@ The working alpha includes:
 - a bounded public-page audit covering HTTP, redirects, robots, static metadata, canonicals, JSON-LD syntax, headings, and links;
 - a bounded apex/www-scoped sitemap and static-link crawler with explicit coverage and compact agent output;
 - a priority-page workflow that safely audits unique pages selected from GA4/GSC opportunities;
+- one first-party `aitraffic` skill that routes Codex and Claude Code through evidence-first setup, audit, opportunity, acquisition, internal-link, structured-data, and verification recipes;
 - a local read-only MCP server with Google, log, and evidence tools;
 - Codex and Claude Code setup guidance;
 - research and roadmap documentation under `docs/research/`.
@@ -86,10 +87,25 @@ aitraffic logs import access.log --format json
 aitraffic mcp serve
 ```
 
-Pin an exact version for reproducible automation:
+Install the optional first-party skill into a project for Codex, Claude Code,
+and other supported coding agents:
 
 ```bash
-npx -y aitraffic@0.5.1 version
+npx -y skills add devanshug2307/aitraffic \
+  --skill aitraffic \
+  --agent codex claude-code \
+  --yes
+```
+
+The skill uses MCP first and CLI JSON as a fallback. It checks coverage before
+interpreting findings, keeps Google OAuth human-run, treats crawled content as
+untrusted data, and never edits a project unless the user asks for a change and
+approves the proposed diff.
+
+Pin an exact CLI version for reproducible automation:
+
+```bash
+npx -y aitraffic@0.6.0 version
 ```
 
 ## Terminal contract

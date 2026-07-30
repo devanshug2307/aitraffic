@@ -1,0 +1,4 @@
+interface:
+  display_name: "AItraffic"
+  short_description: "Evidence-first SEO and AI traffic workflows"
+  default_prompt: "Use $aitraffic to audit this site, prioritize evidence-backed opportunities, and explain coverage limitations."

@@ -63,8 +63,9 @@ The first `0.4.0` value slice is implemented locally and remains unpublished:
 | Single-page capability | Complete locally | `audit page`, `page audit`, and `site.page_audit` |
 | Opportunity-to-page orchestration | Complete locally | `audit opportunities --limit 5` and `site.audit_opportunities` |
 | Bounded sitemap and static-link crawl | Complete locally in `0.5.1` | `crawl <URL>`, `site.crawl`, compact observations, explicit partial/truncated coverage |
+| First-party agent router skill | Complete locally in `0.6.0` | One `aitraffic` skill, nine task recipes, four shared references, MCP-first/CLI-fallback workflow, and drift tests |
 | Unbounded or rendered crawl | Not started | Deliberately excluded; rendering remains a later sampled mode |
-| Public first-party router skill | Not started | Planned for `0.6.0` |
+| Public first-party router skill | Complete locally in `0.6.0` | Install with `npx skills add devanshug2307/aitraffic --skill aitraffic` after the repository is pushed |
 
 This slice answers the first useful question—“which pages should I review now,
 why, what could I change, and how should I verify it?”—without adding write
@@ -793,7 +794,7 @@ The existing `skills` CLI should distribute skills. `aitraffic` should not build
 Target command after the skill folders are published:
 
 ```bash
-npx skills add devanshug2307/aitraffic@aitraffic
+npx skills add devanshug2307/aitraffic --skill aitraffic
 ```
 
 `aitraffic onboard` should continue to install/register the MCP server. Skill installation is optional because an MCP client can use the tools without a prompt workflow.
@@ -828,6 +829,24 @@ The skill should then:
 - Each recipe has happy-path, no-data, missing-connector, and provider-failure scenarios.
 - Skill instructions and CLI schemas cannot silently drift; CI checks referenced command names.
 - Installation is project-scoped by default in documentation.
+
+### Implemented locally (`0.6.0`)
+
+The canonical skill now lives at `skills/aitraffic/` with:
+
+- a concise router in `SKILL.md`;
+- setup, general SEO, Google opportunity, AI acquisition, indexing,
+  structured-data, internal-link, static web-quality, and change-verification
+  recipes;
+- shared command, evidence, Google-limitation, and rule-catalog references;
+- MCP-first routing with exact CLI JSON fallbacks;
+- explicit unauthenticated degradation to `site.page_audit` and `site.crawl`;
+- human-only OAuth and approval-required write boundaries;
+- automated checks for broken local references, stale capability IDs, unknown
+  MCP tools, placeholder text, and invented commands.
+
+The npm package includes the skill folder for inspection and offline reuse.
+GitHub installation remains the recommended path for the `skills` CLI.
 
 ## `0.7.0` — Opportunity Queue and Change Verification
 
