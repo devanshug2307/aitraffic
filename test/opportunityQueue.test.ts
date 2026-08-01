@@ -351,6 +351,22 @@ test("routes queue sync, explain, and update through stable CLI JSON", async () 
     (JSON.parse(preview.stdout) as { data: { saved: boolean } }).data.saved,
     false,
   );
+  const textPreview = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "opportunities",
+      "sync",
+      "--from",
+      envelope.run.id,
+      "--dry-run",
+    ],
+    { cwd, encoding: "utf8", timeout: 10_000 },
+  );
+  assert.equal(textPreview.status, 0, textPreview.stdout);
+  assert.match(textPreview.stdout, /Changes:/u);
+  assert.equal(textPreview.stdout.includes('"affected"'), false);
+  assert.equal(textPreview.stdout.length < 3_000, true);
 
   const applied = run([
     "opportunities",
@@ -366,6 +382,13 @@ test("routes queue sync, explain, and update through stable CLI JSON", async () 
       data: { opportunities: Array<{ id: string }> };
     }
   ).data.opportunities[0]?.id as string;
+  const textList = spawnSync(
+    process.execPath,
+    [cli, "opportunities", "list", "--verbose"],
+    { cwd, encoding: "utf8", timeout: 10_000 },
+  );
+  assert.equal(textList.status, 0, textList.stdout);
+  assert.match(textList.stdout, /Opportunities:/u);
 
   const explained = run([
     "opportunities",

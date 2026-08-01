@@ -98,6 +98,71 @@ test("audits returned static HTML without returning the raw document", async () 
   );
 });
 
+test("parses large JSON-LD without applying display-text truncation", async () => {
+  const jsonLd = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    itemListElement: Array.from({ length: 150 }, (_, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: `Evidence item ${index + 1}`,
+      url: `https://example.com/items/${index + 1}`,
+    })),
+  });
+  assert.equal(jsonLd.length > 2_000, true);
+  const client = fakeClient(
+    `<html><head><title>Items</title><script type="application/ld+json">${jsonLd}</script></head><body><h1>Items</h1></body></html>`,
+  );
+  const analysis = await auditPage(
+    "https://example.com/items",
+    {},
+    client,
+  );
+
+  assert.equal(
+    analysis.findings.some(
+      ({ ruleId }) => ruleId === "INVALID_JSON_LD_SYNTAX_V1",
+    ),
+    false,
+  );
+  const html = analysis.observations.find(
+    (item) => item.type === "html",
+  );
+  assert.equal(
+    html !== undefined &&
+      "structuredData" in html.payload &&
+      html.payload.structuredData[0]?.parseStatus === "valid_json",
+    true,
+  );
+});
+
+test("uses a semantic page hash that ignores volatile executable scripts", async () => {
+  const first = await auditPage(
+    "https://example.com/",
+    {},
+    fakeClient(
+      '<html><head><title>Stable</title></head><body><h1>Stable</h1><script>window.__BUILD_ID__="one"</script></body></html>',
+    ),
+  );
+  const second = await auditPage(
+    "https://example.com/",
+    {},
+    fakeClient(
+      '<html><head><title>Stable</title></head><body><h1>Stable</h1><script>window.__BUILD_ID__="two"</script></body></html>',
+    ),
+  );
+  const changed = await auditPage(
+    "https://example.com/",
+    {},
+    fakeClient(
+      '<html><head><title>Stable</title></head><body><h1>Changed</h1><script>window.__BUILD_ID__="two"</script></body></html>',
+    ),
+  );
+
+  assert.equal(first.summary.contentHash, second.summary.contentHash);
+  assert.notEqual(first.summary.contentHash, changed.summary.contentHash);
+});
+
 test("respects a Googlebot disallow and skips the page request", async () => {
   const client = fakeClient(
     "<html><title>Should not be fetched</title></html>",

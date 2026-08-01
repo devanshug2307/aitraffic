@@ -48,6 +48,20 @@ export {
   type SearchMovement,
 } from "./analysis/opportunities.js";
 export {
+  CHANGE_TYPES,
+  changeRecordPath,
+  createChangeRecord,
+  listChangeRecords,
+  readChangeRecords,
+  relativeChangeRecordPath,
+  showChangeRecord,
+  type ChangeRecord,
+  type ChangeRecordStore,
+  type ChangeRecordSummary,
+  type ChangeType,
+  type CreateChangeRecordInput,
+} from "./core/changeRecords.js";
+export {
   runCapability,
   type CapabilityRunContext,
   type CapabilityRunParameters,
@@ -227,4 +241,15 @@ export {
   inspectOnboarding,
   type OnboardingInspection,
 } from "./onboarding/wizard.js";
+export {
+  inspectAgentRegistration,
+  inspectAgentRegistrations,
+  repairAgentRegistration,
+  type AgentRegistrationInspection,
+  type RegistrationAgent,
+  type RegistrationIssue,
+  type RegistrationOperation,
+  type RegistrationRepairResult,
+  type RegistrationState,
+} from "./onboarding/registrations.js";
 export { SCHEMA_VERSION, VERSION } from "./core/version.js";

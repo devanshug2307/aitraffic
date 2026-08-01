@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 
-import { extractHtmlDocument, normalizeRobotDirectives } from "../connectors/site/html.js";
+import {
+  extractHtmlDocument,
+  normalizeRobotDirectives,
+  stableHtmlContentHash,
+} from "../connectors/site/html.js";
 import { createSiteHttpClient } from "../connectors/site/http.js";
 import { normalizeAuditUrl } from "../connectors/site/networkPolicy.js";
 import {
@@ -410,12 +414,14 @@ export async function auditPage(
   }
 
   let html: HtmlDocumentFacts | null = null;
+  let contentHash = page.sha256;
   if (page.body !== null && isHtmlContentType(page.headers.contentType)) {
     html = extractHtmlDocument(page.body, page.finalUrl);
+    contentHash = stableHtmlContentHash(page.body, page.finalUrl, html);
     const htmlEvidenceId = evidenceId(
       "html",
       page.finalUrl,
-      page.sha256 ?? "",
+      contentHash,
     );
     observations.push({
       id: htmlEvidenceId,
@@ -670,7 +676,7 @@ export async function auditPage(
       robotsDecision: robotsDecision.decision,
       htmlObserved: html !== null,
       staticHtmlOnly: true,
-      contentHash: page.sha256,
+      contentHash,
       findingCounts: countFindings(findings),
     },
     coverage: {

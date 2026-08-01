@@ -6,6 +6,7 @@ import {
   type ProjectAgentTarget,
 } from "../core/project.js";
 import { AppError } from "../core/result.js";
+import type { AgentRegistrationInspection } from "./registrations.js";
 
 export type AgentTarget = ProjectAgentTarget;
 
@@ -28,6 +29,7 @@ export interface AgentDetection {
   executable: string;
   installed: boolean;
   configured: boolean;
+  registration?: AgentRegistrationInspection;
   restartHint: string;
 }
 

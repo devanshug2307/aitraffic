@@ -11,6 +11,14 @@ import {
   projectConfigPath,
   readProjectConfig,
 } from "../core/project.js";
+import {
+  inspectAgentRegistrations,
+  type AgentRegistrationInspection,
+} from "../onboarding/registrations.js";
+import {
+  runProcess,
+  type ProcessRunner,
+} from "../onboarding/agents.js";
 
 export interface DoctorCheck {
   id: string;
@@ -21,6 +29,7 @@ export interface DoctorCheck {
 export interface DoctorReport {
   cwd: string;
   checks: DoctorCheck[];
+  agents: AgentRegistrationInspection[];
   setup: {
     codex: string;
     claudeCode: string;
@@ -38,7 +47,57 @@ async function fileExists(file: string): Promise<boolean> {
   }
 }
 
-export async function runDoctor(cwd = process.cwd()): Promise<DoctorReport> {
+function agentCheck(
+  registration: AgentRegistrationInspection,
+): DoctorCheck {
+  const repair = registration.repair.dryRunCommand;
+  switch (registration.state) {
+    case "healthy":
+      return {
+        id: `agent:${registration.id}`,
+        status: "pass",
+        message: `${registration.label} has the expected AItraffic MCP registration.`,
+      };
+    case "pending_approval":
+      return {
+        id: `agent:${registration.id}`,
+        status: "warn",
+        message: `${registration.label} has the expected project registration, but it is pending approval. ${registration.restartHint}`,
+      };
+    case "not_installed":
+      return {
+        id: `agent:${registration.id}`,
+        status: "warn",
+        message: `${registration.label} is not installed or is not available on PATH.`,
+      };
+    case "missing":
+      return {
+        id: `agent:${registration.id}`,
+        status: "warn",
+        message: `${registration.label} has no AItraffic MCP registration. Review: ${repair}`,
+      };
+    case "drifted":
+      return {
+        id: `agent:${registration.id}`,
+        status: "warn",
+        message: `${registration.label} registration drift detected: ${registration.issues.map(({ message }) => message).join(" ")} Review: ${repair}`,
+      };
+    case "broken":
+    case "unverifiable":
+      return {
+        id: `agent:${registration.id}`,
+        status: registration.state === "broken" ? "fail" : "warn",
+        message: `${registration.label} registration could not be verified safely: ${registration.issues.map(({ message }) => message).join(" ")}${
+          registration.repair.automatic ? ` Review: ${repair}` : ""
+        }`,
+      };
+  }
+}
+
+export async function runDoctor(
+  cwd = process.cwd(),
+  runner: ProcessRunner = runProcess,
+): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
   const [nodeMajor = 0, nodeMinor = 0] = process.versions.node
     .split(".")
@@ -50,6 +109,9 @@ export async function runDoctor(cwd = process.cwd()): Promise<DoctorReport> {
     status: supportedNode ? "pass" : "fail",
     message: `Node.js ${process.versions.node}; version 20.12 or newer is required.`,
   });
+
+  const agents = await inspectAgentRegistrations({ cwd, runner });
+  checks.push(...agents.map(agentCheck));
 
   const configPath = projectConfigPath(cwd);
   try {
@@ -134,6 +196,7 @@ export async function runDoctor(cwd = process.cwd()): Promise<DoctorReport> {
   return {
     cwd,
     checks,
+    agents,
     setup: getAgentSetupCommands(cwd),
   };
 }

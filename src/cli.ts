@@ -57,6 +57,13 @@ import {
   updateOpportunityStatus,
 } from "./core/opportunityQueue.js";
 import {
+  CHANGE_TYPES,
+  createChangeRecord,
+  listChangeRecords,
+  showChangeRecord,
+  type ChangeType,
+} from "./core/changeRecords.js";
+import {
   type AgentIntegration,
   initializeProject,
 } from "./core/project.js";
@@ -72,12 +79,17 @@ import {
   inspectOnboarding,
   runOnboardingWizard,
 } from "./onboarding/wizard.js";
+import {
+  repairAgentRegistration,
+  type RegistrationAgent,
+} from "./onboarding/registrations.js";
 
 type OutputFormat = "text" | "json";
 
 interface ParsedArguments {
   positional: string[];
   format: OutputFormat;
+  verbose: boolean;
 }
 
 const HELP = `AItraffic — terminal-first AI visibility evidence
@@ -87,7 +99,7 @@ Usage:
   aitraffic onboard --check [--format json]
   aitraffic setup [--dry-run]
   aitraffic init [--agent codex|claude-code|both] [--site URL] [--force]
-  aitraffic doctor
+  aitraffic doctor [--repair codex|claude-code|both] [--dry-run|--yes] [--expect-fingerprint VALUE]
   aitraffic schema evidence
   aitraffic logs import <path>
   aitraffic crawlers <path>
@@ -108,6 +120,9 @@ Usage:
   aitraffic opportunities list [--status active|open|planned|dismissed|verified|all] [--observation present|not_observed|unknown|all] [--source technical|google-opportunity] [--priority critical|high|medium|low|info] [--site URL] [--limit N]
   aitraffic opportunities explain <OPP_ID>
   aitraffic opportunities update <OPP_ID> --status open|planned|dismissed --reason TEXT [--dry-run]
+  aitraffic changes record --opportunity <OPP_ID> --url <URL> [--url <URL>] --type metadata|content|internal-links|structured-data|technical|measurement|other [--git-commit REF] [--deployment REF] [--before-hash SHA256] [--after-hash SHA256] [--note TEXT] [--concurrent-change TEXT] [--dry-run]
+  aitraffic changes list [--opportunity <OPP_ID>] [--url <URL>] [--limit N]
+  aitraffic changes show <CHANGE_ID>
   aitraffic crawl <URL> [--limit N] [--concurrency N] [--sitemap auto|none|URL] [--max-sitemaps N]
   aitraffic audit <URL> [--save] [--google auto|off|required] [--technical-only] [--focus all|indexing|internal-links|structured-data] [--top N]
   aitraffic audit history [--limit N]
@@ -125,6 +140,7 @@ Usage:
 Global options:
   --format text|json   Output mode; text is the default
   --json               Alias for --format json
+  --verbose            Show the complete text payload instead of a summary
   --help, -h           Show this help
 `;
 
@@ -147,9 +163,14 @@ Options:
 function parseGlobalArguments(argv: string[]): ParsedArguments {
   const positional: string[] = [];
   let format: OutputFormat = "text";
+  let verbose = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
+    if (value === "--verbose") {
+      verbose = true;
+      continue;
+    }
     if (value === "--json") {
       format = "json";
       continue;
@@ -182,7 +203,7 @@ function parseGlobalArguments(argv: string[]): ParsedArguments {
     }
   }
 
-  return { positional, format };
+  return { positional, format, verbose };
 }
 
 function extractOption(
@@ -615,10 +636,399 @@ function humanizeKey(key: string): string {
     .replace(/^./, (character) => character.toUpperCase());
 }
 
-function renderText(result: CommandResult<unknown>): string {
+type UnknownRecord = Record<string, unknown>;
+
+function record(value: unknown): UnknownRecord | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as UnknownRecord)
+    : null;
+}
+
+function compactCoverage(value: unknown): string | null {
+  const coverage = record(value);
+  if (coverage === null) {
+    return null;
+  }
+  const fields = [
+    ["requested", coverage.requested],
+    ["observed", coverage.observed],
+    ["omitted", coverage.omitted],
+  ]
+    .filter(([, item]) => typeof item === "number")
+    .map(([key, item]) => `${key} ${item}`);
+  if (coverage.partial === true) {
+    fields.push("partial");
+  }
+  if (coverage.truncated === true) {
+    fields.push("truncated");
+  }
+  return fields.length === 0 ? null : fields.join(" · ");
+}
+
+function findingLabel(value: unknown): string | null {
+  const item = record(value);
+  if (item === null) {
+    return null;
+  }
+  const priority =
+    typeof item.priority === "string"
+      ? item.priority
+      : typeof item.severity === "string"
+        ? item.severity
+        : "info";
+  const title =
+    typeof item.title === "string"
+      ? item.title
+      : typeof item.reason === "string"
+        ? item.reason
+        : null;
+  if (title === null) {
+    return null;
+  }
+  const urls = Array.isArray(item.urls)
+    ? item.urls.filter((url): url is string => typeof url === "string")
+    : [];
+  const page = typeof item.page === "string" ? item.page : urls[0];
+  return `[${priority}] ${title}${page ? ` — ${page}` : ""}`;
+}
+
+function compactCapability(
+  data: UnknownRecord,
+): string[] | null {
+  const run = record(data.run);
+  const result = record(data.result);
+  if (run === null || result === null) {
+    return null;
+  }
+  const lines: string[] = [];
+  if (typeof run.id === "string") {
+    lines.push(`Run: ${run.id}`);
+  }
+  const subject = record(data.subject);
+  const subjectValue =
+    typeof subject?.url === "string"
+      ? subject.url
+      : typeof subject?.site === "string"
+        ? subject.site
+        : null;
+  if (subjectValue !== null) {
+    lines.push(`Subject: ${subjectValue}`);
+  }
+  const coverage = compactCoverage(data.coverage);
+  if (coverage !== null) {
+    lines.push(`Coverage: ${coverage}`);
+  }
+
+  const technical = record(result.technical);
+  const technicalSummary = record(technical?.summary);
+  if (technicalSummary !== null) {
+    const pages =
+      typeof technicalSummary.pagesAudited === "number"
+        ? technicalSummary.pagesAudited
+        : null;
+    const failures =
+      typeof technicalSummary.pageFailures === "number"
+        ? technicalSummary.pageFailures
+        : null;
+    if (pages !== null) {
+      const utilityUrlsSkipped =
+        typeof technicalSummary.utilityUrlsSkipped === "number"
+          ? technicalSummary.utilityUrlsSkipped
+          : 0;
+      lines.push(
+        `Technical: ${pages} page${pages === 1 ? "" : "s"} audited${
+          failures === null ? "" : ` · ${failures} failed`
+        }${
+          utilityUrlsSkipped > 0
+            ? ` · ${utilityUrlsSkipped} utilities skipped`
+            : ""
+        }`,
+      );
+    }
+  }
+  const google = record(result.google);
+  if (google !== null) {
+    const status =
+      typeof google.status === "string" ? google.status : "unknown";
+    const selected =
+      typeof google.selectedPages === "number"
+        ? ` · ${google.selectedPages} selected pages`
+        : "";
+    lines.push(`Google: ${status}${selected}`);
+  }
+
+  const prioritization = record(result.prioritization);
+  const prioritized = Array.isArray(prioritization?.findings)
+    ? prioritization.findings
+    : null;
+  const findings = prioritized ?? (Array.isArray(data.findings) ? data.findings : []);
+  if (findings.length > 0) {
+    const visible = findings
+      .slice(0, 10)
+      .flatMap((item) => {
+        const label = findingLabel(item);
+        return label === null ? [] : [label];
+      });
+    lines.push(`Findings: ${findings.length}`);
+    lines.push(...visible.map((label) => `  ${label}`));
+    if (findings.length > visible.length) {
+      lines.push(
+        `  … ${findings.length - visible.length} more; use --verbose or --format json`,
+      );
+    }
+  } else {
+    lines.push("Findings: 0");
+  }
+
+  const artifacts = Array.isArray(data.artifacts) ? data.artifacts : [];
+  for (const artifact of artifacts) {
+    const item = record(artifact);
+    if (typeof item?.path === "string") {
+      lines.push(`Artifact: ${item.path}`);
+    }
+  }
+  const caveats = Array.isArray(data.warnings)
+    ? data.warnings.filter(
+        (warning): warning is string => typeof warning === "string",
+      )
+    : [];
+  for (const caveat of caveats.slice(0, 5)) {
+    lines.push(`Caveat: ${caveat}`);
+  }
+  if (caveats.length > 5) {
+    lines.push(
+      `Caveat: ${caveats.length - 5} more; use --verbose or --format json`,
+    );
+  }
+  return lines;
+}
+
+function compactOpportunitySync(data: UnknownRecord): string[] {
+  const lines: string[] = [];
+  if (typeof data.sourceRunId === "string") {
+    lines.push(`Source run: ${data.sourceRunId}`);
+  }
+  const changes = record(data.changes);
+  if (changes !== null) {
+    lines.push(
+      `Changes: ${Object.entries(changes)
+        .filter(([, value]) => typeof value === "number")
+        .map(([key, value]) => `${key} ${value}`)
+        .join(" · ")}`,
+    );
+  }
+  if (typeof data.totalStored === "number") {
+    lines.push(`Stored opportunities: ${data.totalStored}`);
+  }
+  const affected = Array.isArray(data.affected) ? data.affected : [];
+  for (const item of affected.slice(0, 10)) {
+    const opportunity = record(item);
+    if (
+      typeof opportunity?.id === "string" &&
+      typeof opportunity.title === "string"
+    ) {
+      lines.push(
+        `  ${opportunity.id} [${String(opportunity.priority ?? "info")}] ${opportunity.title}`,
+      );
+    }
+  }
+  if (affected.length > 10) {
+    lines.push(
+      `  … ${affected.length - 10} more; use --verbose or --format json`,
+    );
+  }
+  return lines;
+}
+
+function compactOpportunityList(data: UnknownRecord): string[] {
+  const lines: string[] = [];
+  const summary = record(data.summary);
+  if (summary !== null) {
+    lines.push(
+      `Opportunities: ${String(summary.returned ?? 0)} returned · ${String(summary.stored ?? 0)} stored`,
+    );
+  }
+  const opportunities = Array.isArray(data.opportunities)
+    ? data.opportunities
+    : [];
+  for (const item of opportunities) {
+    const opportunity = record(item);
+    if (
+      typeof opportunity?.id === "string" &&
+      typeof opportunity.title === "string"
+    ) {
+      lines.push(
+        `  ${opportunity.id} [${String(opportunity.priority ?? "info")}/${String(opportunity.status ?? "unknown")}] ${opportunity.title}`,
+      );
+    }
+  }
+  return lines;
+}
+
+function compactChangeRecords(
+  command: string,
+  data: UnknownRecord,
+): string[] | null {
+  const lines: string[] = [];
+  if (command === "changes list") {
+    if (typeof data.totalStored === "number") {
+      const records = Array.isArray(data.records) ? data.records : [];
+      lines.push(
+        `Change records: ${records.length} shown · ${data.totalStored} stored`,
+      );
+      for (const value of records) {
+        const item = record(value);
+        if (
+          typeof item?.id === "string" &&
+          typeof item.opportunityId === "string" &&
+          typeof item.type === "string"
+        ) {
+          lines.push(
+            `  ${item.id} [${item.type}] ${item.opportunityId}`,
+          );
+        }
+      }
+      return lines;
+    }
+    return null;
+  }
+  const change = record(data.record);
+  if (change === null) {
+    return null;
+  }
+  if (typeof change.id === "string") {
+    lines.push(`Change: ${change.id}`);
+  }
+  if (typeof change.opportunityId === "string") {
+    lines.push(`Opportunity: ${change.opportunityId}`);
+  }
+  if (typeof change.type === "string") {
+    lines.push(`Type: ${change.type}`);
+  }
+  const urls = Array.isArray(change.urls) ? change.urls : [];
+  if (urls.length > 0) {
+    lines.push(`URLs: ${urls.length}`);
+  }
+  if (typeof data.dryRun === "boolean") {
+    lines.push(data.dryRun ? "Dry run: no record written" : "Saved locally");
+  }
+  if (typeof data.storagePath === "string") {
+    lines.push(`Storage: ${data.storagePath}`);
+  }
+  const verification = record(data.verification);
+  if (typeof verification?.next === "string") {
+    lines.push(`Next: ${verification.next}`);
+  }
+  return lines;
+}
+
+function compactAuditComparison(data: UnknownRecord): string[] {
+  const lines: string[] = [];
+  const older = record(data.older);
+  const newer = record(data.newer);
+  if (
+    typeof older?.runId === "string" &&
+    typeof newer?.runId === "string"
+  ) {
+    lines.push(`Runs: ${older.runId} → ${newer.runId}`);
+  }
+  const coverage = record(data.coverage);
+  if (coverage !== null) {
+    lines.push(
+      `Coverage: ${coverage.comparable === true ? "comparable" : "not comparable"} · ${coverage.complete === true ? "complete" : "partial"}`,
+    );
+  }
+  const pages = record(data.pages);
+  if (pages !== null) {
+    lines.push(
+      `Pages: ${String(pages.compared ?? 0)} compared · ${Array.isArray(pages.changed) ? pages.changed.length : 0} changed`,
+    );
+  }
+  const technical = record(data.technicalFindings);
+  if (technical !== null) {
+    lines.push(
+      `Technical findings: ${Array.isArray(technical.persistent) ? technical.persistent.length : 0} persistent · ${Array.isArray(technical.resolved) ? technical.resolved.length : 0} resolved · ${Array.isArray(technical.unknown) ? technical.unknown.length : 0} unknown`,
+    );
+  }
+  const google = record(data.googleOpportunities);
+  if (google !== null) {
+    lines.push(
+      `Google opportunities: ${Array.isArray(google.persistent) ? google.persistent.length : 0} persistent · ${google.complete === true ? "complete" : "partial"} comparison`,
+    );
+  }
+  return lines;
+}
+
+function compactDoctor(data: UnknownRecord): string[] | null {
+  const doctor = record(data.doctor) ?? data;
+  const checks = Array.isArray(doctor.checks) ? doctor.checks : null;
+  if (checks === null) {
+    return null;
+  }
+  const lines: string[] = [];
+  if (typeof doctor.cwd === "string") {
+    lines.push(`Project: ${doctor.cwd}`);
+  }
+  for (const value of checks) {
+    const check = record(value);
+    if (
+      typeof check?.id === "string" &&
+      typeof check.status === "string" &&
+      typeof check.message === "string"
+    ) {
+      lines.push(`  [${check.status}] ${check.id}: ${check.message}`);
+    }
+  }
+  const repairs = Array.isArray(data.repairs) ? data.repairs : [];
+  for (const value of repairs) {
+    const repair = record(value);
+    if (
+      typeof repair?.label === "string" &&
+      typeof repair.status === "string"
+    ) {
+      lines.push(`Repair: ${repair.label} · ${repair.status}`);
+      const operations = Array.isArray(repair.operations)
+        ? repair.operations
+        : [];
+      for (const rawOperation of operations) {
+        const operation = record(rawOperation);
+        if (typeof operation?.display === "string") {
+          lines.push(`  ${operation.display}`);
+        }
+      }
+    }
+  }
+  return lines;
+}
+
+export function renderText(
+  result: CommandResult<unknown>,
+  verbose = false,
+): string {
   const lines = [result.ok ? `✓ ${result.command}` : `✗ ${result.command}`];
 
   if (result.data !== undefined) {
+    const data = record(result.data);
+    const compact =
+      verbose || data === null
+        ? null
+        : result.command === "opportunities sync"
+          ? compactOpportunitySync(data)
+          : result.command === "doctor" ||
+              result.command === "doctor repair"
+            ? compactDoctor(data)
+          : result.command === "opportunities list"
+            ? compactOpportunityList(data)
+            : result.command === "changes record" ||
+                result.command === "changes list" ||
+                result.command === "changes show"
+              ? compactChangeRecords(result.command, data)
+            : result.command === "audit compare"
+              ? compactAuditComparison(data)
+              : compactCapability(data);
+    if (compact !== null) {
+      lines.push(...compact);
+    } else
     if (
       typeof result.data === "object" &&
       result.data !== null &&
@@ -640,8 +1050,14 @@ function renderText(result: CommandResult<unknown>): string {
     }
   }
 
-  for (const warning of result.warnings) {
+  const warnings = verbose ? result.warnings : result.warnings.slice(0, 5);
+  for (const warning of warnings) {
     lines.push(`Warning: ${warning}`);
+  }
+  if (!verbose && result.warnings.length > warnings.length) {
+    lines.push(
+      `Warning: ${result.warnings.length - warnings.length} more warning(s); use --verbose or --format json`,
+    );
   }
   for (const error of result.errors) {
     lines.push(`Error [${error.code}]: ${error.message}`);
@@ -650,9 +1066,13 @@ function renderText(result: CommandResult<unknown>): string {
   return lines.join("\n");
 }
 
-function emit(result: CommandResult<unknown>, format: OutputFormat): void {
+function emit(
+  result: CommandResult<unknown>,
+  format: OutputFormat,
+  verbose = false,
+): void {
   const rendered =
-    format === "json" ? JSON.stringify(result) : renderText(result);
+    format === "json" ? JSON.stringify(result) : renderText(result, verbose);
   process.stdout.write(`${rendered}\n`);
 }
 
@@ -717,11 +1137,76 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
   }
 
   if (command === "doctor") {
-    assertNoUnknownOptions(rest);
-    if (rest.length > 0) {
-      throw new AppError("UNEXPECTED_ARGUMENT", `Unexpected argument: ${rest[0]}`);
+    const repair = extractOption(rest, "--repair");
+    const dryRun = takeFlag(repair.remaining, "--dry-run");
+    const yes = takeFlag(dryRun.remaining, "--yes");
+    const expectedFingerprint = extractOption(
+      yes.remaining,
+      "--expect-fingerprint",
+    );
+    assertNoUnknownOptions(expectedFingerprint.remaining);
+    if (expectedFingerprint.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${expectedFingerprint.remaining[0]}`,
+      );
     }
-    return success("doctor", await runDoctor());
+    if (repair.value === undefined) {
+      if (
+        dryRun.present ||
+        yes.present ||
+        expectedFingerprint.value !== undefined
+      ) {
+        throw new AppError(
+          "MISSING_REPAIR_TARGET",
+          "--dry-run, --yes, and --expect-fingerprint require --repair codex|claude-code|both.",
+        );
+      }
+      return success("doctor", await runDoctor());
+    }
+    if (!["codex", "claude-code", "both"].includes(repair.value)) {
+      throw new AppError(
+        "INVALID_AGENT",
+        "--repair must be codex, claude-code, or both.",
+      );
+    }
+    if (dryRun.present && yes.present) {
+      throw new AppError(
+        "CONFLICTING_REPAIR_MODE",
+        "Choose --dry-run to review or --yes to apply, not both.",
+      );
+    }
+    if (
+      repair.value === "both" &&
+      expectedFingerprint.value !== undefined
+    ) {
+      throw new AppError(
+        "AMBIGUOUS_REPAIR_FINGERPRINT",
+        "--expect-fingerprint can be used only when repairing one agent.",
+      );
+    }
+    const targets: RegistrationAgent[] =
+      repair.value === "both"
+        ? ["codex", "claude-code"]
+        : [repair.value as RegistrationAgent];
+    const repairs = [];
+    for (const id of targets) {
+      repairs.push(
+        await repairAgentRegistration({
+          id,
+          dryRun: dryRun.present,
+          confirmed: yes.present,
+          ...(expectedFingerprint.value !== undefined && targets.length === 1
+            ? { expectedFingerprint: expectedFingerprint.value }
+            : {}),
+        }),
+      );
+    }
+    return success("doctor repair", {
+      dryRun: dryRun.present,
+      repairs,
+      doctor: await runDoctor(),
+    });
   }
 
   if (command === "schema" && rest[0] === "evidence") {
@@ -1499,6 +1984,139 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
     );
   }
 
+  if (command === "changes" && rest[0] === "record") {
+    const opportunity = extractOption(rest.slice(1), "--opportunity");
+    const urls = extractRepeatedOption(opportunity.remaining, "--url");
+    const type = extractOption(urls.remaining, "--type");
+    const gitCommit = extractOption(type.remaining, "--git-commit");
+    const deployment = extractOption(gitCommit.remaining, "--deployment");
+    const beforeHash = extractOption(deployment.remaining, "--before-hash");
+    const afterHash = extractOption(beforeHash.remaining, "--after-hash");
+    const note = extractOption(afterHash.remaining, "--note");
+    const concurrentChanges = extractRepeatedOption(
+      note.remaining,
+      "--concurrent-change",
+    );
+    const dryRun = takeFlag(concurrentChanges.remaining, "--dry-run");
+    assertNoUnknownOptions(dryRun.remaining);
+    if (dryRun.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${dryRun.remaining[0]}`,
+      );
+    }
+    if (opportunity.value === undefined || urls.values.length === 0 || type.value === undefined) {
+      throw new AppError(
+        "MISSING_CHANGE_RECORD_FIELDS",
+        "--opportunity, at least one --url, and --type are required.",
+      );
+    }
+    const linked = await explainQueuedOpportunity(opportunity.value);
+    const created = await createChangeRecord(
+      {
+        opportunityId: linked.opportunity.id,
+        opportunityTitle: linked.opportunity.title,
+        site: linked.opportunity.site,
+        urls: urls.values,
+        type: enumOption(
+          type.value,
+          "other",
+          "--type",
+          CHANGE_TYPES,
+        ) as ChangeType,
+        ...(gitCommit.value === undefined
+          ? {}
+          : { gitCommit: gitCommit.value }),
+        ...(deployment.value === undefined
+          ? {}
+          : { deploymentRef: deployment.value }),
+        ...(beforeHash.value === undefined
+          ? {}
+          : { beforeContentHash: beforeHash.value }),
+        ...(afterHash.value === undefined
+          ? {}
+          : { afterContentHash: afterHash.value }),
+        ...(note.value === undefined ? {} : { note: note.value }),
+        ...(concurrentChanges.values.length === 0
+          ? {}
+          : { concurrentChanges: concurrentChanges.values }),
+      },
+      { dryRun: dryRun.present },
+    );
+    return success("changes record", {
+      ...created,
+      verification: {
+        opportunityId: linked.opportunity.id,
+        next: `After a comparable later audit, run aitraffic opportunities sync --latest --format json then aitraffic opportunities explain ${linked.opportunity.id} --format json.`,
+      },
+    });
+  }
+
+  if (command === "changes" && rest[0] === "list") {
+    const opportunity = extractOption(rest.slice(1), "--opportunity");
+    const url = extractOption(opportunity.remaining, "--url");
+    const limit = extractOption(url.remaining, "--limit");
+    assertNoUnknownOptions(limit.remaining);
+    if (limit.remaining.length > 0) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${limit.remaining[0]}`,
+      );
+    }
+    return success(
+      "changes list",
+      await listChangeRecords({
+        ...(opportunity.value === undefined
+          ? {}
+          : { opportunityId: opportunity.value }),
+        ...(url.value === undefined ? {} : { url: url.value }),
+        limit: positiveInteger(limit.value, 20, "--limit", 100),
+      }),
+    );
+  }
+
+  if (command === "changes" && rest[0] === "show") {
+    const changeId = rest[1];
+    if (!changeId) {
+      throw new AppError(
+        "MISSING_CHANGE_RECORD_ID",
+        "Usage: aitraffic changes show <CHANGE_ID>",
+      );
+    }
+    if (rest.length > 2) {
+      throw new AppError(
+        "UNEXPECTED_ARGUMENT",
+        `Unexpected argument: ${rest[2]}`,
+      );
+    }
+    const change = await showChangeRecord(changeId);
+    let opportunity = null;
+    try {
+      opportunity = (await explainQueuedOpportunity(change.record.opportunityId))
+        .opportunity;
+    } catch (error) {
+      if (!(error instanceof AppError) || error.code !== "OPPORTUNITY_NOT_FOUND") {
+        throw error;
+      }
+    }
+    return success("changes show", {
+      ...change,
+      verification: opportunity === null
+        ? {
+            state: "unknown",
+            message:
+              "The linked opportunity is no longer in the local queue. The change record remains intact.",
+          }
+        : {
+            state: opportunity.observationState,
+            workflowStatus: opportunity.status,
+            verification: opportunity.verification,
+            latestRunId: opportunity.evidence.latestRunId,
+            next: `Run a comparable later audit, synchronize the queue, then inspect this change record again.`,
+          },
+    });
+  }
+
   if (command === "opportunities") {
     const options = parseOpportunityOptions(rest);
     assertNoUnknownOptions(options.remaining);
@@ -1708,10 +2326,12 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
 async function main(): Promise<void> {
   let command = process.argv.slice(2).join(" ") || "help";
   let format: OutputFormat = "text";
+  let verbose = false;
 
   try {
     const parsed = parseGlobalArguments(process.argv.slice(2));
     format = parsed.format;
+    verbose = parsed.verbose;
     command = parsed.positional.slice(0, 2).join(" ") || "help";
 
     if (parsed.positional[0] === "mcp" && parsed.positional[1] === "serve") {
@@ -1750,13 +2370,14 @@ async function main(): Promise<void> {
         );
       }
       if (help) {
-        emit(success("onboard help", ONBOARD_HELP), format);
+        emit(success("onboard help", ONBOARD_HELP), format, verbose);
         return;
       }
       if (check.present || nonInteractive.present) {
         emit(
           success("onboard check", await inspectOnboarding()),
           format,
+          verbose,
         );
         return;
       }
@@ -1771,7 +2392,7 @@ async function main(): Promise<void> {
     }
 
     const result = await runCommand(parsed.positional);
-    emit(result, format);
+    emit(result, format, verbose);
   } catch (error) {
     if (error instanceof AppError) {
       const details =
@@ -1783,6 +2404,7 @@ async function main(): Promise<void> {
           ...details,
         }),
         format,
+        verbose,
       );
       process.exitCode = error.exitCode;
       return;
@@ -1795,6 +2417,7 @@ async function main(): Promise<void> {
         message,
       }),
       format,
+      verbose,
     );
     process.exitCode = 1;
   }

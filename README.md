@@ -6,6 +6,10 @@ The project is designed to be directly usable by humans, Codex, Claude Code, CI 
 
 [aitraffic.dev](https://aitraffic.dev) · [npm](https://www.npmjs.com/package/aitraffic) · [GitHub](https://github.com/devanshug2307/aitraffic) · Apache-2.0 · Node.js 20.12+
 
+See [Project status](docs/STATUS.md) for the authoritative shipped, active,
+next, and deferred roadmap. Older research documents retain historical plans
+and should not be used as the current implementation queue.
+
 ## Current alpha
 
 The working alpha includes:
@@ -25,10 +29,12 @@ The working alpha includes:
 - a unified Google opportunity report joining GSC demand to GA4 landing outcomes;
 - a bounded public-page audit covering HTTP, redirects, robots, static metadata, canonicals, JSON-LD syntax, headings, and links;
 - a bounded apex/www-scoped sitemap and static-link crawler with explicit coverage and compact agent output;
+- fragment-normalized page analysis and semantic content hashes that ignore volatile executable scripts while preserving visible and structured content changes;
 - a priority-page workflow that safely audits unique pages selected from GA4/GSC opportunities;
 - one unified audit that composes the bounded crawl with optional matching GSC/GA4 opportunity evidence and returns a compact deterministic priority order;
 - opt-in private local audit snapshots plus coverage-aware before/after comparison for technical findings, page signals, and comparable Google opportunities;
 - a durable local opportunity queue with stable IDs, dry-run synchronization, workflow status, evidence state, and comparable technical verification;
+- private local change records that link approved work to an opportunity, affected URL set, implementation references, and later evidence state;
 - one first-party `aitraffic` skill that routes Codex and Claude Code through evidence-first setup, audit, opportunity, acquisition, internal-link, structured-data, and verification recipes;
 - a local read-only MCP server with Google, log, evidence, and opportunity
   queue tools;
@@ -46,6 +52,9 @@ npx -y aitraffic@latest onboard
 npx -y aitraffic@latest onboard --check --format json
 
 npx -y aitraffic@latest doctor
+npx -y aitraffic@latest doctor --repair codex --dry-run
+# Review the exact operations, then explicitly confirm:
+npx -y aitraffic@latest doctor --repair codex --yes
 npx -y aitraffic@latest init --agent both --site https://example.com
 npx -y aitraffic@latest schema evidence --format json
 npx -y aitraffic@latest logs import access.log --format json
@@ -90,7 +99,7 @@ Install globally if you prefer the shorter executable:
 
 ```bash
 npm install --global aitraffic
-aitraffic doctor
+aitraffic doctor [--repair codex|claude-code|both] [--dry-run|--yes] [--expect-fingerprint VALUE]
 aitraffic init --agent both
 aitraffic logs import access.log --format json
 aitraffic mcp serve
@@ -119,7 +128,10 @@ npx -y aitraffic@0.7.0 version
 
 ## Terminal contract
 
-- Human-readable output is the default in a TTY.
+- Human-readable output is summary-first by default so agent context is not
+  flooded by complete evidence payloads.
+- `--verbose` expands human-readable output when a person needs the full
+  evidence detail.
 - `--format json` produces one stable JSON document on stdout.
 - Diagnostics and MCP lifecycle messages go to stderr.
 - Success exits `0`, expected user/input errors exit `2`, and unexpected failures exit `1`.
@@ -155,6 +167,9 @@ aitraffic opportunities sync (--from RUN_ID | --latest) [--dry-run]
 aitraffic opportunities list [--status active|open|planned|dismissed|verified|all] [--observation present|not_observed|unknown|all] [--source technical|google-opportunity] [--priority critical|high|medium|low|info] [--site URL] [--limit N]
 aitraffic opportunities explain <OPP_ID>
 aitraffic opportunities update <OPP_ID> --status open|planned|dismissed --reason TEXT [--dry-run]
+aitraffic changes record --opportunity <OPP_ID> --url <URL> [--url <URL>] --type metadata|content|internal-links|structured-data|technical|measurement|other [--git-commit REF] [--deployment REF] [--before-hash SHA256] [--after-hash SHA256] [--note TEXT] [--concurrent-change TEXT] [--dry-run]
+aitraffic changes list [--opportunity <OPP_ID>] [--url <URL>] [--limit N]
+aitraffic changes show <CHANGE_ID>
 aitraffic crawl <URL> [--limit N] [--concurrency N] [--sitemap auto|none|URL] [--max-sitemaps N] [--max-sitemap-bytes N]
 aitraffic audit <URL> [--save] [--google auto|off|required] [--technical-only] [--opportunity-limit N] [--focus all|indexing|internal-links|structured-data] [--top N]
 aitraffic audit history [--limit N]
@@ -172,6 +187,14 @@ aitraffic version
 ```
 
 Every non-MCP command supports `--format text|json`.
+
+`doctor` inspects the effective Codex and Claude Code registration, including
+the runtime command, pinned AItraffic package, project scope, and local runtime
+path. A mismatched registration is never replaced by inspection alone. Run
+`doctor --repair <agent> --dry-run` to review the exact remove/add operations,
+then repeat with `--yes` to confirm. Customized registrations containing
+environment values or unfamiliar transports are reported for manual review and
+are not overwritten.
 
 ## Google opportunity workflow
 
@@ -349,6 +372,39 @@ tasks. A verified finding that reappears is reopened. Missing or incompatible
 Google evidence becomes `unknown`; a Google opportunity that is absent from a
 compatible later period is only `not_observed`, never automatically verified.
 Sync rejects older runs after a newer site audit has already been processed.
+
+## Local change records
+
+Record an approved implementation without granting AItraffic permission to
+edit code, a CMS, or a website:
+
+```bash
+# Review the local record before writing it.
+aitraffic changes record \
+  --opportunity OPP_ID \
+  --url https://example.com/pricing \
+  --type metadata \
+  --git-commit abc123 \
+  --note "Updated title and description" \
+  --dry-run \
+  --format json
+
+# Repeat without --dry-run after review.
+aitraffic changes record \
+  --opportunity OPP_ID \
+  --url https://example.com/pricing \
+  --type metadata \
+  --git-commit abc123 \
+  --note "Updated title and description" \
+  --format json
+```
+
+Change records are private, append-only local evidence at
+`.aitraffic/changes/records.json`. They link the opportunity, affected URLs,
+change type, timestamp, optional Git/deployment references, semantic content
+hashes, notes, and known concurrent changes. `changes show` reports the linked
+opportunity's current evidence state; it never claims a ranking or revenue
+change was caused by the recorded work.
 
 With the project MCP server connected, Codex and Claude Code can use
 `list_opportunity_queue` and `explain_opportunity` instead of parsing terminal

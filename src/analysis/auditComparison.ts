@@ -97,6 +97,7 @@ export interface AuditComparison {
   };
   googleOpportunities: {
     comparable: boolean;
+    complete: boolean;
     reasons: string[];
     persistent: Array<{
       key: string;
@@ -462,20 +463,28 @@ function googleSnapshots(
     if (!isGoogleFinding(finding)) {
       continue;
     }
-    const competingPages = (finding.metrics.competingPages ?? [])
-      .map(({ page }) => page)
-      .sort();
+    const competingPages = [
+      ...new Set(
+        (finding.metrics.competingPages ?? []).map(
+          ({ page }) => normalizedUrl(page) ?? page,
+        ),
+      ),
+    ].sort();
+    const page =
+      finding.page === null
+        ? null
+        : normalizedUrl(finding.page) ?? finding.page;
     const key = [
       finding.kind,
       finding.query.trim().toLowerCase(),
-      finding.page ?? "",
+      page ?? "",
       ...competingPages,
     ].join("\u0000");
     result.set(key, {
       key,
       kind: finding.kind,
       query: finding.query,
-      page: finding.page,
+      page,
       competingPages,
       priority: finding.priority,
       metrics: {
@@ -552,15 +561,25 @@ function compareGoogleOpportunities(
   ) {
     reasons.push("The Google reporting period lengths differ.");
   }
-  if (!sourceCoverageComplete(older) || !sourceCoverageComplete(newer)) {
+  const coverageComplete =
+    sourceCoverageComplete(older) && sourceCoverageComplete(newer);
+  if (!coverageComplete) {
     reasons.push("One or both Google datasets are partial or truncated.");
   }
-  const comparable = reasons.length === 0;
+  const comparable = reasons.every(
+    (reason) =>
+      reason !== "Both audits must include Google evidence." &&
+      reason !==
+        "The selected Search Console or GA4 resources differ." &&
+      reason !== "One audit does not record Google source periods." &&
+      reason !== "The Google reporting period lengths differ.",
+  );
   const olderFindings = googleSnapshots(older);
   const newerFindings = googleSnapshots(newer);
   if (!comparable) {
     return {
       comparable,
+      complete: false,
       reasons,
       persistent: [],
       newlyObserved: [],
@@ -576,14 +595,19 @@ function compareGoogleOpportunities(
     }));
   return {
     comparable,
+    complete: coverageComplete,
     reasons,
     persistent,
-    newlyObserved: [...newerFindings.entries()]
-      .filter(([key]) => !olderFindings.has(key))
-      .map(([, finding]) => finding),
-    noLongerObserved: [...olderFindings.entries()]
-      .filter(([key]) => !newerFindings.has(key))
-      .map(([, finding]) => finding),
+    newlyObserved: coverageComplete
+      ? [...newerFindings.entries()]
+          .filter(([key]) => !olderFindings.has(key))
+          .map(([, finding]) => finding)
+      : [],
+    noLongerObserved: coverageComplete
+      ? [...olderFindings.entries()]
+          .filter(([key]) => !newerFindings.has(key))
+          .map(([, finding]) => finding)
+      : [],
   };
 }
 

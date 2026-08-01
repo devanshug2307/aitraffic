@@ -49,6 +49,10 @@ import {
   type AgentInstallResult,
   type AgentTarget,
 } from "./agents.js";
+import {
+  inspectAgentRegistrations,
+  repairAgentRegistration,
+} from "./registrations.js";
 
 const SKIP = "__skip__";
 const CONNECT = "__connect__";
@@ -195,12 +199,29 @@ async function inspectGoogle(): Promise<SafeGoogleStatus> {
 export async function inspectOnboarding(
   cwd = process.cwd(),
 ): Promise<OnboardingInspection> {
-  const [project, agents, googleStatus, googleSelection] = await Promise.all([
+  const [project, detectedAgents, registrations, googleStatus, googleSelection] = await Promise.all([
     readProjectConfig(cwd),
     detectAgentTargets(),
+    inspectAgentRegistrations({ cwd }),
     inspectGoogle(),
     readGoogleConnectorConfig(cwd),
   ]);
+  const registrationByAgent = new Map(
+    registrations.map((registration) => [registration.id, registration]),
+  );
+  const agents = detectedAgents.map((agent) => {
+    const registration =
+      agent.id === "codex" || agent.id === "claude-code"
+        ? registrationByAgent.get(agent.id)
+        : undefined;
+    return registration === undefined
+      ? agent
+      : {
+          ...agent,
+          configured: registration.configured,
+          registration,
+        };
+  });
   const commands = getAgentSetupCommands(cwd);
   return {
     cwd,
@@ -441,7 +462,23 @@ function reviewLines(options: {
     const agent = options.inspection.agents.find(
       (candidate) => candidate.id === id,
     );
-    if (agent?.configured) {
+    if (
+      agent?.registration?.state === "healthy" ||
+      agent?.registration?.state === "pending_approval"
+    ) {
+      lines.push(`Keep existing ${agent.label} registration`);
+    } else if (agent?.registration?.repair.needed) {
+      lines.push(
+        ...agent.registration.repair.operations.map(
+          ({ display }) => display,
+        ),
+      );
+      if (!agent.registration.repair.automatic) {
+        lines.push(
+          `${agent.label} requires manual registration review; it will not be overwritten automatically`,
+        );
+      }
+    } else if (agent?.configured) {
       lines.push(`Keep existing ${agent.label} registration`);
     } else {
       lines.push(buildAgentInstallCommand(id, options.inspection.cwd).display);
@@ -528,8 +565,16 @@ export async function runOnboardingWizard(options: {
         label: agent.label,
         hint: !agent.installed
           ? "not installed"
-          : agent.configured
-            ? "already configured"
+          : agent.registration?.state === "healthy"
+            ? "current"
+            : agent.registration?.state === "pending_approval"
+              ? "pending approval"
+              : agent.registration?.repair.needed
+                ? agent.registration.repair.automatic
+                  ? "repair available"
+                  : "manual review required"
+                : agent.configured
+                  ? "already configured"
             : "detected",
         disabled: !agent.installed,
       })),
@@ -750,7 +795,28 @@ export async function runOnboardingWizard(options: {
         : `Adding AItraffic to ${agent.label}`,
     );
     try {
-      const result = await installAgentTarget({ id, cwd });
+      const registration = agent.registration;
+      const result =
+        registration?.repair.needed
+          ? await (async () => {
+              const repaired = await repairAgentRegistration({
+                id: id as "codex" | "claude-code",
+                cwd,
+                confirmed: true,
+                expectedFingerprint: registration.fingerprint,
+              });
+              return {
+                id,
+                label: agent.label,
+                status:
+                  repaired.status === "already_healthy"
+                    ? ("already_configured" as const)
+                    : ("installed" as const),
+                command: buildAgentInstallCommand(id, cwd).display,
+                restartHint: agent.restartHint,
+              };
+            })()
+          : await installAgentTarget({ id, cwd });
       agentResults.push(result);
       progress.stop(
         result.status === "already_configured"

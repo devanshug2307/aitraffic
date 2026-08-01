@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   parse,
   type DefaultTreeAdapterTypes,
@@ -58,6 +60,20 @@ function textContent(node: Node): string {
     .slice(0, MAX_TEXT_LENGTH);
 }
 
+function rawTextContent(node: Node): string {
+  const pieces: string[] = [];
+  const collect = (current: Node) => {
+    if ("value" in current && typeof current.value === "string") {
+      pieces.push(current.value);
+    }
+    for (const child of childNodes(current)) {
+      collect(child);
+    }
+  };
+  collect(node);
+  return pieces.join("");
+}
+
 function hasAncestor(element: Element, tagName: string): boolean {
   let current = element.parentNode;
   while (current) {
@@ -113,7 +129,7 @@ function collectJsonLdValues(
 
 function jsonLd(element: Element, index: number): ExtractedJsonLd {
   try {
-    const parsed: unknown = JSON.parse(textContent(element));
+    const parsed: unknown = JSON.parse(rawTextContent(element));
     const types = new Set<string>();
     const ids = new Set<string>();
     collectJsonLdValues(parsed, "@type", types);
@@ -134,6 +150,114 @@ function jsonLd(element: Element, index: number): ExtractedJsonLd {
       error: "JSON-LD block is not valid JSON.",
     };
   }
+}
+
+function stableJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stableJson);
+  }
+  if (typeof value !== "object" || value === null) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, stableJson(nested)]),
+  );
+}
+
+function semanticDocumentData(
+  html: string,
+): {
+  visibleText: string;
+  structuredData: unknown[];
+} {
+  const document = parse(html);
+  const visiblePieces: string[] = [];
+  const structuredData: unknown[] = [];
+  const ignoredTextTags = new Set([
+    "script",
+    "style",
+    "noscript",
+    "template",
+    "svg",
+  ]);
+
+  const collectVisible = (node: Node, ignored: boolean) => {
+    const tag = isElement(node) ? node.tagName.toLowerCase() : null;
+    const nextIgnored = ignored || (tag !== null && ignoredTextTags.has(tag));
+    if (
+      !nextIgnored &&
+      "value" in node &&
+      typeof node.value === "string"
+    ) {
+      visiblePieces.push(node.value);
+    }
+    for (const child of childNodes(node)) {
+      collectVisible(child, nextIgnored);
+    }
+  };
+
+  walk(document, (element) => {
+    if (
+      element.tagName.toLowerCase() !== "script" ||
+      attribute(element, "type")?.trim().toLowerCase() !==
+        "application/ld+json"
+    ) {
+      return;
+    }
+    const raw = rawTextContent(element);
+    try {
+      structuredData.push(stableJson(JSON.parse(raw)));
+    } catch {
+      structuredData.push({
+        invalidJsonSha256: createHash("sha256")
+          .update(raw)
+          .digest("hex"),
+      });
+    }
+  });
+  collectVisible(document, false);
+
+  return {
+    visibleText: visiblePieces
+      .join(" ")
+      .replace(/\s+/gu, " ")
+      .trim(),
+    structuredData,
+  };
+}
+
+export function stableHtmlContentHash(
+  html: string,
+  finalUrl: string,
+  facts: HtmlDocumentFacts,
+): string {
+  const semantic = semanticDocumentData(html);
+  const documentUrl = new URL(finalUrl);
+  documentUrl.hash = "";
+  const representation = {
+    url: documentUrl.toString(),
+    htmlLang: facts.htmlLang,
+    titles: facts.titles,
+    metaDescriptions: facts.metaDescriptions,
+    metaRobots: facts.metaRobots,
+    canonicals: facts.canonicals,
+    headings: facts.headings,
+    links: facts.links.items.map(
+      ({ resolvedUrl, text, rel, kind }) => ({
+        resolvedUrl,
+        text,
+        rel,
+        kind,
+      }),
+    ),
+    visibleText: semantic.visibleText,
+    structuredData: semantic.structuredData,
+  };
+  return createHash("sha256")
+    .update(JSON.stringify(representation))
+    .digest("hex");
 }
 
 function linkKind(

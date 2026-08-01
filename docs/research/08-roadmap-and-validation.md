@@ -1,5 +1,10 @@
 # Roadmap and Validation
 
+> [!IMPORTANT]
+> This is a historical research roadmap. See the authoritative
+> [Project status](../STATUS.md) for the current implementation state and
+> priority order.
+
 ## Roadmap rule
 
 Do not build the complete feature catalog in order. Ship one credible evidence loop, charge for it, and expand from observed usage.

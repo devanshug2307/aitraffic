@@ -36,6 +36,7 @@ export interface OpportunityObservation {
   period: { start: string; end: string };
   retrievedAt: string;
   page: string;
+  pageVariants?: string[];
   query?: string;
   current?: {
     clicks: number;
@@ -127,6 +128,7 @@ export interface OpportunityAnalysis {
 interface SearchRow {
   query: string;
   page: string;
+  pageVariants: string[];
   clicks: number;
   impressions: number;
   ctr: number;
@@ -138,24 +140,63 @@ function finiteNumber(value: string | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function documentPageUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return value.split("#", 1)[0] ?? value;
+  }
+}
+
 function searchRows(rows: GscRow[] | undefined): SearchRow[] {
-  return (rows ?? []).flatMap((row) => {
-    const query = row.keys?.[0]?.trim() ?? "";
-    const page = row.keys?.[1]?.trim() ?? "";
-    if (!query || !page) {
-      return [];
+  const aggregated = new Map<
+    string,
+    {
+      query: string;
+      page: string;
+      pageVariants: Set<string>;
+      clicks: number;
+      impressions: number;
+      weightedPosition: number;
     }
-    return [
-      {
-        query,
-        page,
-        clicks: row.clicks ?? 0,
-        impressions: row.impressions ?? 0,
-        ctr: row.ctr ?? 0,
-        position: row.position ?? 0,
-      },
-    ];
-  });
+  >();
+  for (const row of rows ?? []) {
+    const query = row.keys?.[0]?.trim() ?? "";
+    const rawPage = row.keys?.[1]?.trim() ?? "";
+    if (!query || !rawPage) {
+      continue;
+    }
+    const page = documentPageUrl(rawPage);
+    const key = `${query}\u0000${page}`;
+    const impressions = row.impressions ?? 0;
+    const existing = aggregated.get(key) ?? {
+      query,
+      page,
+      pageVariants: new Set<string>(),
+      clicks: 0,
+      impressions: 0,
+      weightedPosition: 0,
+    };
+    existing.pageVariants.add(rawPage);
+    existing.clicks += row.clicks ?? 0;
+    existing.impressions += impressions;
+    existing.weightedPosition += (row.position ?? 0) * impressions;
+    aggregated.set(key, existing);
+  }
+  return [...aggregated.values()].map((row) => ({
+    query: row.query,
+    page: row.page,
+    pageVariants: [...row.pageVariants].sort(),
+    clicks: row.clicks,
+    impressions: row.impressions,
+    ctr: row.impressions === 0 ? 0 : row.clicks / row.impressions,
+    position:
+      row.impressions === 0
+        ? 0
+        : row.weightedPosition / row.impressions,
+  }));
 }
 
 function rowKey(row: Pick<SearchRow, "query" | "page">): string {
@@ -435,6 +476,9 @@ export async function buildOpportunityAnalysis(
       period: periods.gsc.current,
       retrievedAt: now.toISOString(),
       page: candidate.row.page,
+      ...(candidate.row.pageVariants.length > 1
+        ? { pageVariants: candidate.row.pageVariants }
+        : {}),
       query: candidate.row.query,
       current: {
         clicks: candidate.row.clicks,
@@ -454,6 +498,9 @@ export async function buildOpportunityAnalysis(
         period: periods.gsc.previous,
         retrievedAt: now.toISOString(),
         page: candidate.previous.page,
+        ...(candidate.previous.pageVariants.length > 1
+          ? { pageVariants: candidate.previous.pageVariants }
+          : {}),
         query: candidate.previous.query,
         previous: {
           clicks: candidate.previous.clicks,
@@ -546,6 +593,9 @@ export async function buildOpportunityAnalysis(
         period: periods.gsc.current,
         retrievedAt: now.toISOString(),
         page: row.page,
+        ...(row.pageVariants.length > 1
+          ? { pageVariants: row.pageVariants }
+          : {}),
         query: row.query,
         current: {
           clicks: row.clicks,
@@ -644,6 +694,7 @@ export async function buildOpportunityAnalysis(
   const warnings = [
     "Search Console dates use the source reporting timezone and this analysis excludes the latest three days for freshness.",
     "Search Console page/query reports are top-row reports and can omit anonymized or low-volume queries.",
+    "Search Console fragment variants are aggregated to their document URL before page opportunities and overlap candidates are calculated.",
     "GA4 outcomes are joined to Search Console pages by hostname and case-sensitive normalized path; query-string or hostname measurement gaps can reduce match quality.",
     "GA4 landing outcomes are limited to the Organic Search channel group; channel classification and attribution depend on property configuration.",
     "Zero GA4 key events may indicate missing measurement, not an absence of business outcomes.",

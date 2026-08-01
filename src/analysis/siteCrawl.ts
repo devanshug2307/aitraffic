@@ -119,6 +119,7 @@ export interface SiteCrawlAnalysis {
     sitemapDocumentsFetched: number;
     sitemapUrlsObserved: number;
     linkUrlsDiscovered: number;
+    utilityUrlsSkipped: number;
     statuses: {
       success2xx: number;
       redirect3xx: number;
@@ -174,6 +175,10 @@ const MAX_DISCOVERED_MULTIPLIER = 20;
 const MAX_URLS_PER_PATH = 5;
 const SKIPPED_ASSET_EXTENSIONS =
   /\.(?:avif|bmp|css|csv|docx?|eot|gif|ico|jpe?g|js|json|mp3|mp4|mov|otf|pdf|png|pptx?|rar|rss|svg|tar|tiff?|ttf|txt|webm|webp|woff2?|xlsx?|xml|zip)$/iu;
+const SKIPPED_UTILITY_PATHS = [
+  /^\/cdn-cgi(?:\/|$)/iu,
+  /^\/api\/auth(?:\/|$)/iu,
+] as const;
 
 function boundedInteger(
   value: number | undefined,
@@ -243,6 +248,12 @@ function scopedSiteUrl(
   } catch {
     return null;
   }
+}
+
+function isAutomaticUtilityUrl(url: URL): boolean {
+  return SKIPPED_UTILITY_PATHS.some((pattern) =>
+    pattern.test(url.pathname),
+  );
 }
 
 function pageHtml(audit: PageAuditAnalysis): HtmlDocumentFacts | null {
@@ -497,6 +508,7 @@ export async function crawlSite(
   const perPath = new Map<string, number>();
   let linkUrlsDiscovered = 0;
   let sitemapUrlsObserved = 0;
+  const skippedUtilityUrls = new Set<string>();
   let sitemapCoverageComplete = sitemapMode !== "none";
   let validSitemapDocuments = 0;
 
@@ -506,7 +518,14 @@ export async function crawlSite(
     lastmod: string | null = null,
   ) => {
     const parsed = scopedSiteUrl(candidate, root);
-    if (!parsed || SKIPPED_ASSET_EXTENSIONS.test(parsed.pathname)) {
+    if (
+      !parsed ||
+      SKIPPED_ASSET_EXTENSIONS.test(parsed.pathname) ||
+      (source !== "seed" && isAutomaticUtilityUrl(parsed))
+    ) {
+      if (parsed && source !== "seed" && isAutomaticUtilityUrl(parsed)) {
+        skippedUtilityUrls.add(parsed.toString());
+      }
       return;
     }
     const normalized = parsed.toString();
@@ -652,6 +671,11 @@ export async function crawlSite(
         parsed.kind === "unsupported"
       ) {
         sitemapCoverageComplete = false;
+      }
+      if (parsed.truncated) {
+        incompleteReasons.push(
+          `sitemap observation retained ${parsed.retainedEntries} of ${parsed.totalEntries} entries because the audit discovery cap was reached`,
+        );
       }
       if (parsed.kind !== "unsupported") {
         validSitemapDocuments += 1;
@@ -857,7 +881,7 @@ export async function crawlSite(
       (item.payload.status < 200 ||
         item.payload.status >= 300 ||
         item.payload.errors.length > 0 ||
-        item.payload.truncated),
+        item.payload.bodyRead !== "complete"),
   );
   if (sitemapProblems.length > 0) {
     const item = siteFinding(
@@ -1221,6 +1245,11 @@ export async function crawlSite(
     error: page.error,
   }));
   const uniqueIncompleteReasons = [...new Set(incompleteReasons)];
+  if (skippedUtilityUrls.size > 0) {
+    warnings.push(
+      `${skippedUtilityUrls.size} discovered Cloudflare-managed or authentication utility URL${skippedUtilityUrls.size === 1 ? " was" : "s were"} excluded from automatic SEO page auditing.`,
+    );
+  }
   return {
     generatedAt: observedAt,
     summary: {
@@ -1237,6 +1266,7 @@ export async function crawlSite(
       ).length,
       sitemapUrlsObserved,
       linkUrlsDiscovered,
+      utilityUrlsSkipped: skippedUtilityUrls.size,
       statuses,
       findingCounts: countFindings(findings),
     },

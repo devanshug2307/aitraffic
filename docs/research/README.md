@@ -4,6 +4,11 @@
 > Research snapshot: 2026-07-29
 > Intended relationship: **AI Traffic by TrafficClaw**
 
+> [!IMPORTANT]
+> This directory is a dated research snapshot, not the current implementation
+> queue. See the authoritative [Project status](../STATUS.md) before selecting
+> the next feature.
+
 ## Executive answer
 
 `aitraffic.dev` should not become a second generic analytics dashboard, a prompt rank tracker, or a thin GA4/GSC MCP wrapper. Each of those markets already has substantial free and paid supply.

@@ -325,6 +325,54 @@ test("marks page-limit and sitemap-entry caps as incomplete coverage", async () 
   assert.equal(envelope.coverage.truncated, true);
 });
 
+test("reports an internal sitemap retention cap as coverage, not a site defect", async () => {
+  const sitemap = `<urlset>${Array.from(
+    { length: 1_001 },
+    (_, index) =>
+      `<url><loc>https://example.com/page-${index}</loc></url>`,
+  ).join("")}</urlset>`;
+  const client: SiteHttpClient = {
+    async get(url) {
+      if (url.endsWith("/robots.txt")) {
+        return response(
+          url,
+          "User-agent: *\nAllow: /\nSitemap: https://example.com/sitemap.xml",
+          200,
+          "text/plain",
+        );
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return response(url, sitemap, 200, "application/xml");
+      }
+      return response(
+        url,
+        "<html><head><title>Page</title></head><body><h1>Page</h1></body></html>",
+      );
+    },
+  };
+
+  const crawl = await crawlSite(
+    "https://example.com/",
+    { limit: 1, concurrency: 1 },
+    client,
+  );
+
+  assert.equal(crawl.coverage.partial, true);
+  assert.equal(crawl.coverage.truncated, true);
+  assert.equal(
+    crawl.coverage.incompleteReasons.some((reason) =>
+      reason.includes("audit discovery cap"),
+    ),
+    true,
+  );
+  assert.equal(
+    crawl.findings.some(
+      ({ ruleId }) => ruleId === "SITEMAP_FETCH_OR_PARSE_INCOMPLETE_V1",
+    ),
+    false,
+  );
+});
+
 test("keeps common apex-to-www redirects inside the crawl boundary", async () => {
   const client: SiteHttpClient = {
     async get(url) {
@@ -363,6 +411,56 @@ test("keeps common apex-to-www redirects inside the crawl boundary", async () =>
   assert.equal(crawl.summary.pagesAudited, 2);
   assert.equal(
     crawl.pages.some(({ url }) => url === "https://www.example.com/page"),
+    true,
+  );
+});
+
+test("does not treat discovered Cloudflare and authentication utilities as SEO pages", async () => {
+  const calls: string[] = [];
+  const client: SiteHttpClient = {
+    async get(url) {
+      calls.push(url);
+      if (url.endsWith("/robots.txt")) {
+        return response(url, "User-agent: *\nAllow: /", 200, "text/plain");
+      }
+      if (url.endsWith("/about")) {
+        return response(
+          url,
+          "<html><head><title>About</title></head><body><h1>About</h1></body></html>",
+        );
+      }
+      assert.equal(url, "https://example.com/");
+      return response(
+        url,
+        `<html><head><title>Home</title></head><body>
+          <a href="/cdn-cgi/l/email-protection">Email</a>
+          <a href="/api/auth/signin/google">Sign in</a>
+          <a href="/about">About</a>
+        </body></html>`,
+      );
+    },
+  };
+
+  const crawl = await crawlSite(
+    "https://example.com/",
+    { sitemap: "none", limit: 10 },
+    client,
+  );
+
+  assert.equal(crawl.summary.pagesDiscovered, 2);
+  assert.equal(crawl.summary.utilityUrlsSkipped, 2);
+  assert.equal(crawl.pages.some(({ url }) => url.includes("/cdn-cgi/")), false);
+  assert.equal(crawl.pages.some(({ url }) => url.includes("/api/auth/")), false);
+  assert.equal(
+    calls.some(
+      (url) => url.includes("/cdn-cgi/") || url.includes("/api/auth/"),
+    ),
+    false,
+  );
+  assert.equal(
+    crawl.warnings.some((warning) =>
+      warning.includes("excluded from automatic SEO page auditing"),
+    ),
     true,
   );
 });

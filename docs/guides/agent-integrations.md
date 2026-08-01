@@ -19,6 +19,20 @@ For Codex, Claude Code, scripts, or CI, use the non-interactive inspection:
 npx -y aitraffic@latest onboard --check --format json
 ```
 
+Inspect registration health without changing anything:
+
+```bash
+aitraffic doctor
+aitraffic doctor --repair codex --dry-run
+aitraffic doctor --repair claude-code --dry-run
+```
+
+The dry run prints the exact scoped remove/add operations. After reviewing
+them, repeat with `--yes` to confirm. AItraffic verifies the resulting
+registration and restores the previous secret-free configuration when a
+replacement fails. Registrations with custom environment values or unfamiliar
+transports require manual review and are never overwritten automatically.
+
 This command never prompts or writes. The direct CLI commands below remain the
 stable automation path.
 

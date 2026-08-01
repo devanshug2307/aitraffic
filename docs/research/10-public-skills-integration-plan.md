@@ -4,6 +4,11 @@
 > Scope: public agent skills for SEO, AEO, GEO, Google Search Console, GA4, site quality, structured data, content, and programmatic SEO
 > Product target: the local-first `aitraffic` CLI, MCP server, and first-party skills for Codex and Claude Code
 
+> [!IMPORTANT]
+> This plan preserves the research and release reasoning that led to the
+> current product. Its older “immediate next” section is superseded by the
+> authoritative [Project status](../STATUS.md).
+
 ## Executive decision
 
 Public skills should be used as a structured source of product ideas, workflow patterns, and test cases. They should not become the implementation layer or an unreviewed runtime dependency.

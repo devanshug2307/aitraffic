@@ -341,15 +341,30 @@ test("compares Google opportunities only for compatible evidence", async () => {
   const comparison = compareAuditRuns(older, newer);
 
   assert.equal(comparison.googleOpportunities.comparable, true);
+  assert.equal(comparison.googleOpportunities.complete, true);
   assert.equal(
     comparison.googleOpportunities.persistent.length > 0,
     true,
   );
 
+  const partial = structuredClone(newer);
+  const partialCoverage =
+    partial.result.google.sourceEvidence?.sourceCoverage.previousGsc;
+  assert.ok(partialCoverage);
+  partialCoverage.partial = true;
+  partialCoverage.truncated = true;
+  const bounded = compareAuditRuns(older, partial);
+  assert.equal(bounded.googleOpportunities.comparable, true);
+  assert.equal(bounded.googleOpportunities.complete, false);
+  assert.equal(bounded.googleOpportunities.persistent.length > 0, true);
+  assert.deepEqual(bounded.googleOpportunities.newlyObserved, []);
+  assert.deepEqual(bounded.googleOpportunities.noLongerObserved, []);
+
   const mismatched = structuredClone(newer);
   mismatched.subject.ga4Property = "different-property";
   const blocked = compareAuditRuns(older, mismatched);
   assert.equal(blocked.googleOpportunities.comparable, false);
+  assert.equal(blocked.googleOpportunities.complete, false);
   assert.match(
     blocked.googleOpportunities.reasons.join(" "),
     /resources differ/u,

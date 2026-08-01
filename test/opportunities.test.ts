@@ -241,6 +241,124 @@ test("prioritizes GSC opportunities and joins GA4 landing outcomes", async () =>
   });
 });
 
+class FragmentOpportunityProvider extends OpportunityProvider {
+  override async gscReport(
+    _site: string,
+    request: GscReportRequest,
+  ): Promise<GscReportResponse> {
+    this.gscRequests.push(request);
+    const current = request.start === "2026-06-30";
+    return {
+      rows: current
+        ? [
+            {
+              keys: [
+                "fragment query",
+                "https://example.com/guide#one",
+              ],
+              clicks: 1,
+              impressions: 120,
+              ctr: 1 / 120,
+              position: 8,
+            },
+            {
+              keys: [
+                "fragment query",
+                "https://example.com/guide#two",
+              ],
+              clicks: 1,
+              impressions: 130,
+              ctr: 1 / 130,
+              position: 8,
+            },
+            {
+              keys: ["real overlap", "https://example.com/one"],
+              clicks: 2,
+              impressions: 100,
+              ctr: 0.02,
+              position: 7,
+            },
+            {
+              keys: ["real overlap", "https://example.com/two"],
+              clicks: 1,
+              impressions: 100,
+              ctr: 0.01,
+              position: 9,
+            },
+          ]
+        : [
+            {
+              keys: ["fragment query", "https://example.com/guide"],
+              clicks: 20,
+              impressions: 250,
+              ctr: 0.08,
+              position: 7,
+            },
+            {
+              keys: ["real overlap", "https://example.com/one"],
+              clicks: 4,
+              impressions: 100,
+              ctr: 0.04,
+              position: 7,
+            },
+            {
+              keys: ["real overlap", "https://example.com/two"],
+              clicks: 3,
+              impressions: 100,
+              ctr: 0.03,
+              position: 9,
+            },
+          ],
+    };
+  }
+}
+
+test("aggregates fragment variants before creating page and overlap opportunities", async () => {
+  const analysis = await buildOpportunityAnalysis(
+    new FragmentOpportunityProvider(),
+    CONFIG,
+    {
+      days: 28,
+      maxRows: 100,
+      minImpressions: 100,
+      now: new Date("2026-07-30T12:00:00.000Z"),
+    },
+  );
+
+  const fragmentFindings = analysis.findings.filter(
+    ({ query }) => query === "fragment query",
+  );
+  assert.equal(
+    fragmentFindings.filter(({ kind }) => kind === "page_query").length,
+    1,
+  );
+  assert.equal(
+    fragmentFindings.some(({ kind }) => kind === "cannibalization"),
+    false,
+  );
+  assert.equal(
+    fragmentFindings[0]?.page,
+    "https://example.com/guide",
+  );
+  assert.equal(
+    analysis.findings.some(
+      ({ kind, query }) =>
+        kind === "cannibalization" && query === "real overlap",
+    ),
+    true,
+  );
+  assert.deepEqual(
+    analysis.observations.find(
+      ({ query, current }) =>
+        query === "fragment query" && current !== undefined,
+    )?.pageVariants,
+    [
+      "https://example.com/guide#one",
+      "https://example.com/guide#two",
+    ],
+  );
+});
+
 test("returns the same opportunity workflow in a capability envelope", async () => {
   const envelope = await runCapability(
     "google.opportunities",

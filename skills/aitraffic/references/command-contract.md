@@ -41,6 +41,8 @@ Always request JSON for agent use:
 
 ```bash
 aitraffic doctor --format json
+aitraffic doctor --repair codex --dry-run --format json
+aitraffic doctor --repair claude-code --dry-run --format json
 aitraffic capabilities list --format json
 aitraffic capabilities describe site.crawl --format json
 aitraffic capabilities run site.crawl --url https://example.com --limit 25 --format json
@@ -55,6 +57,9 @@ aitraffic opportunities sync --latest --format json
 aitraffic opportunities list --format json
 aitraffic opportunities explain OPP_ID --format json
 aitraffic opportunities update OPP_ID --status planned --reason "REASON" --dry-run --format json
+aitraffic changes record --opportunity OPP_ID --url URL --type metadata --note "WHAT CHANGED" --dry-run --format json
+aitraffic changes list --format json
+aitraffic changes show CHANGE_ID --format json
 aitraffic crawl https://example.com --limit 25 --format json
 aitraffic audit page https://example.com/page --format json
 aitraffic opportunities --days 28 --format json
@@ -79,8 +84,13 @@ version such as `npx -y aitraffic@0.7.0`; do not silently execute
 - Never retry OAuth or resource selection on the user's behalf.
 - Treat `aitraffic init` and interactive onboarding as local writes rather than
   read-only diagnostics.
+- Registration inspection and repair dry runs are read-only. A repair requires
+  the user to review the exact operations and explicitly approve `--yes`.
 - Treat `aitraffic audit --save` as an opt-in private local write. The MCP
   `site.full_audit` capability remains read-only.
 - Treat opportunity queue sync and status update as private local writes.
   Preview both with `--dry-run`; `list_opportunity_queue` and
   `explain_opportunity` are read-only MCP equivalents of the CLI reads.
+- Treat `changes record` as a private local write. It must link an existing
+  opportunity and be previewed with `--dry-run` before the user approves the
+  final record. MCP does not create or modify change records.

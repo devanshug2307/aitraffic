@@ -1,5 +1,10 @@
 # AItraffic Onboarding Roadmap
 
+> [!IMPORTANT]
+> This document preserves the original onboarding milestones. Its historical
+> version labels no longer match the current `0.7.0` package line. See the
+> authoritative [Project status](../STATUS.md) for the active priority order.
+
 ## Product goal
 
 Make the first useful AItraffic session take less than two minutes:
@@ -180,12 +185,15 @@ tenant isolation, and audited data access.
 - [x] Doctor summary and first-prompt handoff.
 - [x] Unit tests for agent plans and onboarding inspection.
 - [x] Manual terminal walkthrough from the packed npm tarball.
-- [ ] Publish `aitraffic@0.3.0` after approval.
+- [x] Superseded the `0.3.0` release target with the current `0.7.0` package
+  line.
 
 ### 0.3.x — Repair and polish
 
-- [ ] Detect registrations pinned to an older AItraffic version.
-- [ ] Reviewable replace/repair flow for mismatched registrations.
+- [x] Detect Codex and Claude Code registrations pinned to an older AItraffic
+  version or pointing at the wrong local runtime/project scope.
+- [x] Reviewable dry-run and confirmed replace/repair flow with verification,
+  secret-safe refusal boundaries, and rollback.
 - [ ] `Back` navigation where the prompt library can preserve state safely.
 - [ ] Accessibility and Windows/Linux terminal walkthroughs.
 - [ ] Installation telemetry only after explicit opt-in.

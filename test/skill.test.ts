@@ -139,6 +139,9 @@ test("documents only implemented CLI command families", async () => {
     "opportunities list",
     "opportunities explain",
     "opportunities update",
+    "changes record",
+    "changes list",
+    "changes show",
     "report acquisition",
     "crawlers",
   ];
@@ -155,6 +158,9 @@ test("documents only implemented CLI command families", async () => {
     "opportunities list --format json",
     "opportunities explain OPP_ID --format json",
     "opportunities update OPP_ID --status planned --reason \"REASON\" --dry-run --format json",
+    "changes record --opportunity OPP_ID --url URL --type metadata --note \"WHAT CHANGED\" --dry-run --format json",
+    "changes list --format json",
+    "changes show CHANGE_ID --format json",
   ]) {
     assert.ok(commands.includes(required), `Missing skill command: ${required}`);
   }
@@ -166,5 +172,5 @@ test("documents only implemented CLI command families", async () => {
       `Unknown skill command: aitraffic ${command}`,
     );
   }
-  assert.doesNotMatch(combined, /^\s*aitraffic (?:change|cwv|crawl history)/gmu);
+  assert.doesNotMatch(combined, /^\s*aitraffic (?:change(?!s\b)|cwv|crawl history)/gmu);
 });
