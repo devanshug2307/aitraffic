@@ -19,6 +19,7 @@ import {
 } from "./connectors/google/config.js";
 import {
   configureGoogleOAuthClient,
+  configureTrafficClawDesktopOAuthClient,
   getGoogleOAuthStatus,
   loginGoogleOAuthProfile,
   revokeGoogleOAuthProfile,
@@ -105,6 +106,7 @@ Usage:
   aitraffic crawlers <path>
   aitraffic classify <user-agent>
   aitraffic auth google configure (--from-client-json PATH | --from-env-file PATH)
+  aitraffic auth google use-trafficclaw [--replace]
   aitraffic auth google login --profile NAME
   aitraffic auth google status [--profile NAME]
   aitraffic auth google revoke --profile NAME [--dry-run] [--local-only]
@@ -1298,6 +1300,26 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
       }),
       [
         "The OAuth client is stored in the operating-system credential store, not the project.",
+      ],
+    );
+  }
+
+  if (
+    command === "auth" &&
+    rest[0] === "google" &&
+    rest[1] === "use-trafficclaw"
+  ) {
+    const replace = takeFlag(rest.slice(2), "--replace");
+    assertNoUnknownOptions(replace.remaining);
+    const vault = await createSystemGoogleVault();
+    return success(
+      "auth google use-trafficclaw",
+      await configureTrafficClawDesktopOAuthClient({
+        vault,
+        replaceExisting: replace.present,
+      }),
+      [
+        "TrafficClaw's public Desktop OAuth client uses PKCE; your Google tokens remain in the operating-system credential store.",
       ],
     );
   }

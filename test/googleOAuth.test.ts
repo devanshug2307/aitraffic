@@ -7,8 +7,11 @@ import test from "node:test";
 import { LocalGoogleDataProvider } from "../src/connectors/google/localProvider.js";
 import {
   GOOGLE_READ_ONLY_SCOPES,
+  TRAFFICCLAW_DESKTOP_CLIENT_ID,
+  TRAFFICCLAW_DESKTOP_REDIRECT_URI,
   buildGoogleAuthorizationUrl,
   configureGoogleOAuthClient,
+  configureTrafficClawDesktopOAuthClient,
   getGoogleOAuthStatus,
   googleOAuthClientKey,
   loginGoogleOAuthProfile,
@@ -201,18 +204,25 @@ test("imports Google Web application JSON without returning its secret", async (
   assert.equal((await vault.getClient())?.clientSecret, "json-client-secret");
 });
 
-test("rejects installed-app JSON and non-loopback web redirects", () => {
-  assert.throws(() =>
+test("accepts Desktop client JSON without requiring a fixed callback", () => {
+  assert.deepEqual(
     parseGoogleOAuthClientJson(
       JSON.stringify({
         installed: {
-          client_id: "desktop-client",
-          client_secret: "desktop-secret",
+          client_id: "desktop-client.apps.googleusercontent.com",
           redirect_uris: ["http://localhost"],
         },
       }),
     ),
+    {
+      clientId: "desktop-client.apps.googleusercontent.com",
+      clientType: "desktop",
+      redirectUri: TRAFFICCLAW_DESKTOP_REDIRECT_URI,
+    },
   );
+});
+
+test("rejects non-loopback Web application redirects", () => {
   assert.throws(() =>
     parseGoogleOAuthClientJson(
       JSON.stringify({
@@ -224,6 +234,77 @@ test("rejects installed-app JSON and non-loopback web redirects", () => {
       }),
     ),
   );
+});
+
+test("configures the public TrafficClaw Desktop OAuth client without a secret", async () => {
+  const store = new MemorySecretStore();
+  const vault = new SecureGoogleVault(store);
+  const result = await configureTrafficClawDesktopOAuthClient({
+    vault,
+    now: new Date("2026-08-02T00:00:00.000Z"),
+  });
+
+  assert.equal(result.configured, true);
+  assert.equal(result.redirectUri, TRAFFICCLAW_DESKTOP_REDIRECT_URI);
+  const client = await vault.getClient();
+  assert.equal(client?.clientId, TRAFFICCLAW_DESKTOP_CLIENT_ID);
+  assert.equal(client?.clientType, "desktop");
+  assert.equal(client?.clientSecret, undefined);
+});
+
+test("requires an explicit replacement before changing a local OAuth client", async () => {
+  const store = new MemorySecretStore();
+  const vault = new SecureGoogleVault(store);
+  await vault.setClient(oauthClient());
+
+  await assert.rejects(
+    configureTrafficClawDesktopOAuthClient({ vault }),
+    /different local Google OAuth client/,
+  );
+  await configureTrafficClawDesktopOAuthClient({
+    vault,
+    replaceExisting: true,
+  });
+  assert.equal((await vault.getClient())?.clientId, TRAFFICCLAW_DESKTOP_CLIENT_ID);
+});
+
+test("uses PKCE without a client secret for the Desktop OAuth client", async () => {
+  const store = new MemorySecretStore();
+  const vault = new SecureGoogleVault(store);
+  await configureTrafficClawDesktopOAuthClient({ vault });
+  const fetchImplementation = (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
+    if (String(input) === "https://oauth2.googleapis.com/token") {
+      const body = new URLSearchParams(String(init?.body));
+      assert.equal(body.get("client_id"), TRAFFICCLAW_DESKTOP_CLIENT_ID);
+      assert.equal(body.has("client_secret"), false);
+      assert.ok(body.get("code_verifier"));
+      return jsonResponse({
+        access_token: "desktop-access-token",
+        refresh_token: "desktop-refresh-token",
+        expires_in: 3600,
+        scope: GOOGLE_READ_ONLY_SCOPES.join(" "),
+      });
+    }
+    if (String(input) === "https://openidconnect.googleapis.com/v1/userinfo") {
+      return jsonResponse({ sub: "desktop-user" });
+    }
+    throw new Error(`Unexpected request: ${String(input)}`);
+  }) as typeof fetch;
+
+  const result = await loginGoogleOAuthProfile("desktop", vault, {
+    fetch: fetchImplementation,
+    receiveAuthorizationCode: async (url, redirectUri) => {
+      assert.equal(redirectUri, "http://127.0.0.1:3000/");
+      assert.equal(new URL(url).searchParams.get("client_id"), TRAFFICCLAW_DESKTOP_CLIENT_ID);
+      return "desktop-code";
+    },
+  });
+
+  assert.equal(result.connected, true);
+  assert.equal((await vault.getProfile("desktop"))?.refreshToken, "desktop-refresh-token");
 });
 
 test("completes login without returning tokens or authorization codes", async () => {

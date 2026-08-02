@@ -41,7 +41,14 @@ The working alpha includes:
 - Codex and Claude Code setup guidance;
 - research and roadmap documentation under `docs/research/`.
 
-AItraffic does not yet include scheduled collection or a hosted connector. Native OAuth imports a Google Web application client from its downloaded JSON or a private environment file; no client secret is bundled in npm. The person running the CLI personally completes Google consent, and tokens stay in the OS credential store. Tokens are never printed or exposed through MCP.
+AItraffic does not yet include scheduled collection or a hosted connector. The
+official beta is **AItraffic by TrafficClaw**: Google consent identifies
+TrafficClaw, while AItraffic provides the terminal and agent experience.
+Native OAuth uses TrafficClaw's public Desktop client by default, or imports a
+bring-your-own client from downloaded JSON or a private environment file. No
+Web client secret is bundled in npm. The person running the CLI personally
+completes Google consent, and tokens stay in the OS credential store. Tokens
+are never printed or exposed through MCP.
 
 ## Quick start
 
@@ -93,7 +100,14 @@ npx -y aitraffic@latest audit opportunities --limit 5 --format json
 npx -y aitraffic@latest report acquisition --days 28 --format json
 ```
 
-The dedicated AItraffic Google project is currently in Testing, so only listed test users can authorize it and refresh tokens may expire after seven days. Public zero-configuration OAuth requires a hosted token broker plus Google verification; the npm package does not distribute the Web client secret. See the [Google connector guide](docs/guides/google-connector.md) for the beta setup and optional TrafficClaw/external-adapter path.
+The official beta uses TrafficClaw's production Google OAuth project with
+verified read-only Analytics access. The consent screen says **TrafficClaw**;
+AItraffic is a TrafficClaw product. A fresh CLI can use TrafficClaw's public
+Desktop OAuth client with PKCE; no client secret or hosted token broker is
+needed. Google tokens remain in the user's OS credential store. Public hosted
+accounts, scheduled work, and cross-device sessions remain a future option.
+See the [Google connector guide](docs/guides/google-connector.md) and the
+[TrafficClaw product identity guide](docs/guides/trafficclaw-product-identity.md).
 
 Install globally if you prefer the shorter executable:
 
@@ -152,6 +166,7 @@ aitraffic logs import <path>
 aitraffic crawlers <path>
 aitraffic classify <user-agent>
 aitraffic auth google configure (--from-client-json PATH | --from-env-file PATH)
+aitraffic auth google use-trafficclaw [--replace]
 aitraffic auth google login --profile NAME
 aitraffic auth google status [--profile NAME]
 aitraffic auth google revoke --profile NAME [--dry-run] [--local-only]

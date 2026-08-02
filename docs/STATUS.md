@@ -1,7 +1,7 @@
 # AItraffic Project Status
 
 > Current implementation status and active priority order  
-> Last reconciled: 2026-07-31  
+> Last reconciled: 2026-08-02
 > Repository package version: `0.7.0`
 
 This document is the source of truth for what AItraffic has shipped, what is
@@ -26,6 +26,11 @@ items and “immediate next” sections do not override this status.
 
 AItraffic is a terminal-first evidence and action layer for humans, Codex,
 Claude Code, CI, and MCP-compatible agents.
+
+For the current beta, AItraffic is a **TrafficClaw product**. TrafficClaw is
+the Google OAuth consent and data-processing identity; AItraffic remains the
+terminal-first product surface. This does not turn the local CLI into a hosted
+connector or relax its local credential and read-only boundaries.
 
 The core workflow is:
 
@@ -56,6 +61,8 @@ causal revenue.
 ### Google connector
 
 - Native local Google OAuth using PKCE and state validation.
+- One-command TrafficClaw Desktop OAuth setup for fresh local CLI users, with
+  the Google tokens retained in OS credential storage.
 - Imported OAuth client configuration without bundling a client secret in npm.
 - Named Google profiles, refresh, status, and revoke.
 - OS credential-store persistence with no plaintext-token fallback.

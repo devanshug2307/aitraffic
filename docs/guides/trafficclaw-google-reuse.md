@@ -200,6 +200,11 @@ TrafficClaw remains the hosted analytics application and operational OAuth
 broker. AItraffic becomes the open CLI, evidence model, connector SDK, and
 agent-facing control plane.
 
+For the beta, communicate this externally as **AItraffic by TrafficClaw**.
+Google consent must continue to identify TrafficClaw accurately; use separate
+OAuth clients for TrafficClaw production, AItraffic local beta, and any future
+AItraffic hosted callback.
+
 This avoids building a second dashboard while giving developers a useful
 local product and giving TrafficClaw a distribution path through Codex,
 Claude Code, CI, and other MCP clients.

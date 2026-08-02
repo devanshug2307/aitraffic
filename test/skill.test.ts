@@ -121,6 +121,7 @@ test("documents only implemented CLI command families", async () => {
     "init",
     "onboard",
     "auth google configure",
+    "auth google use-trafficclaw",
     "auth google login",
     "google inventory",
     "google select",
