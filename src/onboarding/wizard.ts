@@ -59,6 +59,20 @@ const SKIP = "__skip__";
 const CONNECT = "__connect__";
 const TRAFFICCLAW = "__trafficclaw__";
 
+export function shouldStartOnboardingAutomatically(options: {
+  positionalCount: number;
+  format: "text" | "json";
+  stdinIsTTY: boolean | undefined;
+  stdoutIsTTY: boolean | undefined;
+}): boolean {
+  return (
+    options.positionalCount === 0 &&
+    options.format === "text" &&
+    options.stdinIsTTY === true &&
+    options.stdoutIsTTY === true
+  );
+}
+
 interface SafeGoogleStatus {
   available: boolean;
   clientConfigured: boolean;

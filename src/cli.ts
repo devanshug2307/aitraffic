@@ -79,6 +79,7 @@ import { serveMcp } from "./mcp/server.js";
 import {
   inspectOnboarding,
   runOnboardingWizard,
+  shouldStartOnboardingAutomatically,
 } from "./onboarding/wizard.js";
 import {
   repairAgentRegistration,
@@ -96,6 +97,7 @@ interface ParsedArguments {
 const HELP = `AItraffic — terminal-first AI visibility evidence
 
 Usage:
+  aitraffic                         Start guided onboarding in an interactive terminal
   aitraffic onboard [--dry-run]
   aitraffic onboard --check [--format json]
   aitraffic setup [--dry-run]
@@ -2355,6 +2357,19 @@ async function main(): Promise<void> {
     format = parsed.format;
     verbose = parsed.verbose;
     command = parsed.positional.slice(0, 2).join(" ") || "help";
+
+    if (
+      shouldStartOnboardingAutomatically({
+        positionalCount: parsed.positional.length,
+        format,
+        stdinIsTTY: process.stdin.isTTY,
+        stdoutIsTTY: process.stdout.isTTY,
+      })
+    ) {
+      command = "onboard";
+      await runOnboardingWizard();
+      return;
+    }
 
     if (parsed.positional[0] === "mcp" && parsed.positional[1] === "serve") {
       if (parsed.positional.length > 2) {

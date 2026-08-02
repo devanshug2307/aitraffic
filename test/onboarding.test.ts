@@ -13,6 +13,7 @@ import {
   type ProcessRunner,
   type ProcessResult,
 } from "../src/onboarding/agents.js";
+import { shouldStartOnboardingAutomatically } from "../src/onboarding/wizard.js";
 
 function result(
   exitCode: number | null,
@@ -27,6 +28,45 @@ function result(
   };
 }
 
+test("starts guided onboarding automatically only for a bare interactive terminal command", () => {
+  assert.equal(
+    shouldStartOnboardingAutomatically({
+      positionalCount: 0,
+      format: "text",
+      stdinIsTTY: true,
+      stdoutIsTTY: true,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldStartOnboardingAutomatically({
+      positionalCount: 0,
+      format: "json",
+      stdinIsTTY: true,
+      stdoutIsTTY: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldStartOnboardingAutomatically({
+      positionalCount: 0,
+      format: "text",
+      stdinIsTTY: false,
+      stdoutIsTTY: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldStartOnboardingAutomatically({
+      positionalCount: 1,
+      format: "text",
+      stdinIsTTY: true,
+      stdoutIsTTY: true,
+    }),
+    false,
+  );
+});
+
 test("builds shell-free registration commands for all supported agents", async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), "aitraffic-onboard-"));
   const codex = buildAgentInstallCommand("codex", cwd);
@@ -38,7 +78,7 @@ test("builds shell-free registration commands for all supported agents", async (
     "--",
     "npx",
     "-y",
-    "aitraffic@0.7.0",
+    "aitraffic@0.8.0",
     "mcp",
     "serve",
   ]);
