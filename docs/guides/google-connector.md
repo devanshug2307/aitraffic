@@ -9,9 +9,9 @@ Both providers implement the same `GoogleDataProvider` contract, so GA4, Search 
 
 ## Native OAuth beta
 
-AItraffic uses a Google **Web application** OAuth client and stores it in the
-operating-system credential store. Import the JSON downloaded from Google
-Cloud:
+AItraffic supports Google **Desktop app** and **Web application** OAuth
+clients. Both keep the resulting tokens in the operating-system credential
+store. To import a Web client JSON downloaded from Google Cloud:
 
 ```bash
 npx -y aitraffic@latest auth google configure \
@@ -19,45 +19,63 @@ npx -y aitraffic@latest auth google configure \
   --format json
 ```
 
-The JSON must contain a Web application client with an authorized loopback
-redirect URI. AItraffic copies the client ID and secret into macOS Keychain,
-Windows Credential Manager, or Linux Secret Service. It never returns the
-secret or writes it to project configuration. Delete or securely archive the
-downloaded source file after a successful import.
+The Web JSON must contain an authorized loopback redirect URI. AItraffic copies
+the client ID and secret into macOS Keychain, Windows Credential Manager, or
+Linux Secret Service. It never returns the secret or writes it to project
+configuration. Delete or securely archive the downloaded source file after a
+successful import.
 
-The dedicated AItraffic Google Cloud project is a controlled beta:
+The official beta is **AItraffic by TrafficClaw**. It uses TrafficClaw's
+production Google Cloud project and its approved read-only Analytics scope.
+Users should expect Google consent to display **TrafficClaw**, not AItraffic.
+This is intentional: TrafficClaw is the OAuth application and data-processing
+identity; AItraffic is its terminal-first product.
 
-- Its publishing status is Testing.
-- Only explicitly listed test users can authorize it.
-- Google limits it to 100 test users before verification.
-- Testing-mode refresh tokens for these scopes may expire after seven days.
-- Users may see Google’s unverified-app warning.
-- The consent screen displays the **AItraffic** brand.
+For the official local-first flow, no downloaded client JSON is needed. Run
+`aitraffic onboard` and choose **Connect Google**, or configure it directly:
 
-Do not publish or share the downloaded Web client JSON. Public
-zero-configuration login requires an AItraffic-hosted OAuth broker, verified
-`aitraffic.dev` privacy and terms pages, a scope justification and demo video,
-and Google verification.
+```bash
+npx -y aitraffic@latest auth google use-trafficclaw
+npx -y aitraffic@latest auth google login --profile work
+```
+
+This uses a Google **Desktop app** client with PKCE and a temporary loopback
+callback. Its public client ID is packaged with AItraffic; no client secret is
+packaged. The user completes consent in their system browser and the resulting
+access and refresh tokens remain only in that computer's OS credential store.
+The Google consent page identifies **TrafficClaw** as AItraffic's OAuth
+provider; this is disclosed before consent but does not require the user to
+understand any OAuth configuration.
+
+Use a distinct Web OAuth client for each product and deployment environment.
+For example, keep TrafficClaw production, AItraffic local CLI, and a future
+AItraffic hosted service on separate clients. This prevents one redirect URI or
+credential rotation from breaking another product. Do not publish or share a
+downloaded **Web** client JSON. A future hosted login still requires a
+tenant-scoped encrypted token broker and an AItraffic public site that
+accurately states it is a TrafficClaw product.
 
 The Google account completing consent must already have access to the relevant GA4 property and Search Console site.
 
 ## Create or bring your own OAuth client
 
 Use `auth google configure` when you want a separate Google Cloud project,
-consent brand, quota, or verification lifecycle. In that project:
+consent brand, quota, or verification lifecycle. For the official beta, import
+only the packaged TrafficClaw Desktop client. In a bring-your-own project:
 
 1. Enable the **Google Analytics Data API**, **Google Analytics Admin API**, and **Google Search Console API**.
 2. Configure the Google OAuth consent screen. If the app is in testing, add the Google accounts that will connect as test users.
-3. Create an OAuth 2.0 client with application type **Web application**.
-4. Add this authorized redirect URI exactly:
+3. Create an OAuth 2.0 client with application type **Web application** and
+   add this authorized redirect URI exactly:
 
    ```text
    http://localhost:3000/api/auth/callback/google
    ```
 
-You can choose another loopback port or path, but the Google Cloud value and
-`GOOGLE_REDIRECT_URI` must be identical. AItraffic accepts only an HTTP
-loopback URI with an explicit port, no query, and no fragment.
+Alternatively, create a **Desktop app** client. AItraffic accepts its
+`installed` JSON and uses a PKCE-protected `127.0.0.1` loopback callback with
+an available local port. AItraffic accepts only HTTP loopback URIs with an
+explicit port, no query, and no fragment.
 
 The simplest import is the downloaded Web client JSON:
 
@@ -100,6 +118,7 @@ Google’s references:
 - [OAuth 2.0 for web server applications](https://developers.google.com/identity/protocols/oauth2/web-server)
 - [Google Analytics Data API quickstart](https://developers.google.com/analytics/devguides/reporting/data/v1/quickstart)
 - [Search Console OAuth authorization](https://developers.google.com/webmaster-tools/v1/how-tos/authorizing)
+- [Google OAuth 2.0 policies](https://developers.google.com/identity/protocols/oauth2/policies)
 
 ## Connect named Google accounts
 

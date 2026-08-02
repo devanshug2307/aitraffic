@@ -17,8 +17,11 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 const GOOGLE_USERINFO_URL =
   "https://openidconnect.googleapis.com/v1/userinfo";
-const DEFAULT_REDIRECT_URI =
+const DEFAULT_WEB_REDIRECT_URI =
   "http://localhost:3000/api/auth/callback/google";
+export const TRAFFICCLAW_DESKTOP_CLIENT_ID =
+  "94795138733-oj8eovhdkgppu5k2j3oifcbhhl3l98lb.apps.googleusercontent.com";
+export const TRAFFICCLAW_DESKTOP_REDIRECT_URI = "http://127.0.0.1:0/";
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1_000;
 
 export const GOOGLE_READ_ONLY_SCOPES = [
@@ -128,7 +131,8 @@ export function validateGoogleRedirectUri(value: string): string {
 
 export function parseGoogleOAuthClientJson(contents: string): {
   clientId: string;
-  clientSecret: string;
+  clientSecret?: string;
+  clientType: "web" | "desktop";
   redirectUri: string;
 } {
   let parsed: unknown;
@@ -140,15 +144,34 @@ export function parseGoogleOAuthClientJson(contents: string): {
       "Google OAuth client JSON is not valid JSON.",
     );
   }
-  if (!isRecord(parsed) || !isRecord(parsed.web)) {
+  if (!isRecord(parsed) || (!isRecord(parsed.web) && !isRecord(parsed.installed))) {
     throw new AppError(
       "GOOGLE_CLIENT_JSON_INVALID",
-      "Google OAuth client JSON must contain a Web application client.",
+      "Google OAuth client JSON must contain a Web or Desktop application client.",
     );
   }
-  const clientId = parsed.web.client_id;
-  const clientSecret = parsed.web.client_secret;
-  const redirectUris = parsed.web.redirect_uris;
+  if (isRecord(parsed.installed)) {
+    const clientId = parsed.installed.client_id;
+    const clientSecret = parsed.installed.client_secret;
+    if (typeof clientId !== "string" || clientId.trim() === "") {
+      throw new AppError(
+        "GOOGLE_CLIENT_JSON_INVALID",
+        "Google Desktop OAuth client JSON is missing a client ID.",
+      );
+    }
+    return {
+      clientId: clientId.trim(),
+      ...(typeof clientSecret === "string" && clientSecret.trim() !== ""
+        ? { clientSecret: clientSecret.trim() }
+        : {}),
+      clientType: "desktop",
+      redirectUri: TRAFFICCLAW_DESKTOP_REDIRECT_URI,
+    };
+  }
+  const web = parsed.web as Record<string, unknown>;
+  const clientId = web.client_id;
+  const clientSecret = web.client_secret;
+  const redirectUris = web.redirect_uris;
   if (
     typeof clientId !== "string" ||
     clientId.trim() === "" ||
@@ -180,7 +203,42 @@ export function parseGoogleOAuthClientJson(contents: string): {
   return {
     clientId: clientId.trim(),
     clientSecret: clientSecret.trim(),
+    clientType: "web",
     redirectUri,
+  };
+}
+
+export async function configureTrafficClawDesktopOAuthClient(options: {
+  vault: GoogleCredentialVault;
+  now?: Date;
+  replaceExisting?: boolean;
+}): Promise<{
+  configured: true;
+  redirectUri: string;
+  vaultBackend: { id: string; name: string };
+}> {
+  const existing = await options.vault.getClient();
+  if (
+    existing !== null &&
+    existing.clientId !== TRAFFICCLAW_DESKTOP_CLIENT_ID &&
+    options.replaceExisting !== true
+  ) {
+    throw new AppError(
+      "GOOGLE_OAUTH_CLIENT_REPLACEMENT_REQUIRES_CONFIRMATION",
+      "A different local Google OAuth client is already configured. Re-run with --replace only if you intend to reconnect existing profiles with TrafficClaw.",
+    );
+  }
+  await options.vault.setClient({
+    schemaVersion: "0.2.0",
+    clientId: TRAFFICCLAW_DESKTOP_CLIENT_ID,
+    clientType: "desktop",
+    redirectUri: TRAFFICCLAW_DESKTOP_REDIRECT_URI,
+    configuredAt: (options.now ?? new Date()).toISOString(),
+  });
+  return {
+    configured: true,
+    redirectUri: TRAFFICCLAW_DESKTOP_REDIRECT_URI,
+    vaultBackend: options.vault.backendInfo(),
   };
 }
 
@@ -201,7 +259,8 @@ export async function configureGoogleOAuthClient(options: {
     );
   }
   let clientId: string;
-  let clientSecret: string;
+  let clientSecret: string | undefined;
+  let clientType: "web" | "desktop";
   let redirectUri: string;
   if (options.envFile) {
     const envFile = path.resolve(options.envFile);
@@ -216,14 +275,20 @@ export async function configureGoogleOAuthClient(options: {
     }
     clientId = values.GOOGLE_CLIENT_ID?.trim() ?? "";
     clientSecret = values.GOOGLE_CLIENT_SECRET?.trim() ?? "";
-    if (!clientId || !clientSecret) {
+    clientType = values.GOOGLE_CLIENT_TYPE?.trim() === "desktop" ? "desktop" : "web";
+    if (!clientId || (clientType === "web" && !clientSecret)) {
       throw new AppError(
         "GOOGLE_OAUTH_CLIENT_MISSING",
-        "Environment file must define GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.",
+        clientType === "desktop"
+          ? "Environment file must define GOOGLE_CLIENT_ID."
+          : "Environment file must define GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.",
       );
     }
     redirectUri = validateGoogleRedirectUri(
-      values.GOOGLE_REDIRECT_URI?.trim() || DEFAULT_REDIRECT_URI,
+      values.GOOGLE_REDIRECT_URI?.trim() ||
+        (clientType === "desktop"
+          ? TRAFFICCLAW_DESKTOP_REDIRECT_URI
+          : DEFAULT_WEB_REDIRECT_URI),
     );
   } else {
     const clientJsonFile = path.resolve(options.clientJsonFile ?? "");
@@ -236,14 +301,14 @@ export async function configureGoogleOAuthClient(options: {
         `Cannot read Google OAuth client JSON: ${clientJsonFile}`,
       );
     }
-    ({ clientId, clientSecret, redirectUri } =
+    ({ clientId, clientSecret, clientType, redirectUri } =
       parseGoogleOAuthClientJson(contents));
   }
   const client: GoogleOAuthClient = {
     schemaVersion: "0.2.0",
     clientId,
-    clientSecret,
-    clientType: "web",
+    ...(clientSecret ? { clientSecret } : {}),
+    clientType,
     redirectUri,
     configuredAt: (options.now ?? new Date()).toISOString(),
   };

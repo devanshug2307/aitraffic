@@ -31,7 +31,15 @@
    ```
 
 5. If Google evidence is requested, call `google_connection_status`. When it is
-   not configured, explain that the user must personally run:
+   not configured, explain that the user must personally run the TrafficClaw
+   local flow:
+
+   ```bash
+   aitraffic auth google use-trafficclaw
+   aitraffic auth google login --profile PROFILE
+   ```
+
+   They may instead bring their own Google OAuth client:
 
    ```bash
    aitraffic auth google configure --from-client-json /secure/path/client.json

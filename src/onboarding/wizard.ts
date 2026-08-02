@@ -22,6 +22,7 @@ import {
 } from "../connectors/google/config.js";
 import {
   configureGoogleOAuthClient,
+  configureTrafficClawDesktopOAuthClient,
   getGoogleOAuthStatus,
   loginGoogleOAuthProfile,
 } from "../connectors/google/oauth.js";
@@ -56,7 +57,7 @@ import {
 
 const SKIP = "__skip__";
 const CONNECT = "__connect__";
-const IMPORT_CLIENT = "__import_client__";
+const TRAFFICCLAW = "__trafficclaw__";
 
 interface SafeGoogleStatus {
   available: boolean;
@@ -346,14 +347,17 @@ async function chooseGscSite(
 
 async function connectGoogleProfile(options: {
   clientConfigured: boolean;
-  importClient: boolean;
+  useTrafficClaw?: boolean;
   dryRun: boolean;
 }): Promise<{
   profile: string;
   plannedOnly: boolean;
 }> {
   let clientJsonPath: string | undefined;
-  if (options.importClient || !options.clientConfigured) {
+  if (
+    !options.useTrafficClaw &&
+    !options.clientConfigured
+  ) {
     const entered = unwrapPrompt(
       await text({
         message: "Path to the downloaded Google Web OAuth client JSON",
@@ -388,8 +392,11 @@ async function connectGoogleProfile(options: {
     [
       clientJsonPath
         ? `Import OAuth client: ${clientJsonPath}`
+        : options.useTrafficClaw
+          ? "Use AItraffic's built-in Google Desktop client with PKCE"
         : "Use the OAuth client already stored on this computer",
       `Open browser consent for profile: ${normalizedProfile}`,
+      "Google consent identifies TrafficClaw as AItraffic's OAuth provider",
       "Request only read-only Analytics and Search Console scopes",
       "Store the client and tokens only in the OS credential store",
     ].join("\n"),
@@ -412,6 +419,17 @@ async function connectGoogleProfile(options: {
   }
 
   const vault = await createSystemGoogleVault();
+  if (options.useTrafficClaw) {
+    const progress = spinner();
+    progress.start("Configuring TrafficClaw local OAuth");
+    try {
+      await configureTrafficClawDesktopOAuthClient({ vault });
+      progress.stop("TrafficClaw local OAuth is ready");
+    } catch (error) {
+      progress.stop("TrafficClaw local OAuth configuration failed");
+      throw error;
+    }
+  }
   if (clientJsonPath) {
     const progress = spinner();
     progress.start("Importing the OAuth client into secure storage");
@@ -640,11 +658,13 @@ export async function runOnboardingWizard(options: {
         hint: "uses the OAuth client stored on this computer",
       });
     }
-    googleChoices.push({
-      value: IMPORT_CLIENT,
-      label: "Import a Google OAuth client",
-      hint: "advanced local setup",
-    });
+    if (!inspection.google.clientConfigured) {
+      googleChoices.push({
+        value: TRAFFICCLAW,
+        label: "Connect Google",
+        hint: "recommended; opens your browser and keeps credentials on this computer",
+      });
+    }
     googleChoices.push({
       value: SKIP,
       label: "Skip Google for now",
@@ -656,7 +676,9 @@ export async function runOnboardingWizard(options: {
         options: googleChoices,
         initialValue: connectedProfiles[0]
           ? `profile:${connectedProfiles[0].profile}`
-          : SKIP,
+          : inspection.google.clientConfigured
+            ? SKIP
+            : TRAFFICCLAW,
         maxItems: 10,
       }),
     );
@@ -666,11 +688,15 @@ export async function runOnboardingWizard(options: {
         profile: validateGoogleProfile(googleChoice.slice("profile:".length)),
         plannedOnly: false,
       };
-    } else if (googleChoice === CONNECT || googleChoice === IMPORT_CLIENT) {
+    } else if (
+      googleChoice === CONNECT ||
+      googleChoice === TRAFFICCLAW
+    ) {
       googlePlan = {
         ...(await connectGoogleProfile({
-          clientConfigured: inspection.google.clientConfigured,
-          importClient: googleChoice === IMPORT_CLIENT,
+          clientConfigured:
+            inspection.google.clientConfigured || googleChoice === TRAFFICCLAW,
+          useTrafficClaw: googleChoice === TRAFFICCLAW,
           dryRun,
         })),
       };
