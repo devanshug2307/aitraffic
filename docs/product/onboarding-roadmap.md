@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > This document preserves the original onboarding milestones. Its historical
-> version labels no longer match the current `0.7.0` package line. See the
+> version labels no longer match the current `0.8.0` package line. See the
 > authoritative [Project status](../STATUS.md) for the active priority order.
 
 ## Product goal
@@ -185,7 +185,7 @@ tenant isolation, and audited data access.
 - [x] Doctor summary and first-prompt handoff.
 - [x] Unit tests for agent plans and onboarding inspection.
 - [x] Manual terminal walkthrough from the packed npm tarball.
-- [x] Superseded the `0.3.0` release target with the current `0.7.0` package
+- [x] Superseded the `0.3.0` release target with the current `0.8.0` package
   line.
 
 ### 0.3.x — Repair and polish

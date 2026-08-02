@@ -53,6 +53,10 @@ are never printed or exposed through MCP.
 ## Quick start
 
 ```bash
+# In an interactive terminal, this starts guided onboarding automatically.
+npx -y aitraffic@latest
+
+# Explicit form (equivalent interactive flow):
 npx -y aitraffic@latest onboard
 
 # Read-only, machine-readable inspection for agents and CI.
@@ -137,7 +141,7 @@ approves the proposed diff.
 Pin an exact CLI version for reproducible automation:
 
 ```bash
-npx -y aitraffic@0.7.0 version
+npx -y aitraffic@0.8.0 version
 ```
 
 ## Terminal contract

@@ -2,7 +2,7 @@
 
 > Current implementation status and active priority order  
 > Last reconciled: 2026-08-02
-> Repository package version: `0.7.0`
+> Repository package version: `0.8.0`
 
 This document is the source of truth for what AItraffic has shipped, what is
 being validated, and what should be built next. Research documents retain their
