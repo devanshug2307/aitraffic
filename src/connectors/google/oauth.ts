@@ -438,6 +438,7 @@ async function receiveLocalAuthorizationCode(
     };
     let settled = false;
     let activeRedirect = new URL(redirect);
+    let exchangeRedirectUri = activeRedirect.toString();
     const finish = (error: Error | null, code?: string) => {
       if (settled) {
         return;
@@ -448,7 +449,7 @@ async function receiveLocalAuthorizationCode(
       if (error) {
         reject(error);
       } else if (code !== undefined) {
-        resolve({ code, redirectUri: activeRedirect.toString() });
+        resolve({ code, redirectUri: exchangeRedirectUri });
       }
     };
     const server = createServer((request, response) => {
@@ -523,9 +524,14 @@ async function receiveLocalAuthorizationCode(
       }
       activeRedirect = new URL(redirect);
       activeRedirect.port = String(address.port);
+      // Google documents Desktop loopback callbacks as an origin with a dynamic
+      // port (for example, http://127.0.0.1:9004). Use that native-client form
+      // consistently for both authorization and token exchange.
+      const activeRedirectUri = activeRedirect.origin;
+      exchangeRedirectUri = activeRedirectUri;
       const authorizationUrl = buildGoogleAuthorizationUrl({
         clientId: options.clientId,
-        redirectUri: activeRedirect.toString(),
+        redirectUri: activeRedirectUri,
         state: options.state,
         codeChallenge: options.codeChallenge,
       });
@@ -565,13 +571,25 @@ async function parseTokenResponse(response: Response): Promise<TokenResponse> {
       /^[a-z_]{1,64}$/u.test(parsed.error)
         ? parsed.error
         : undefined;
+    const description =
+      isRecord(parsed) &&
+      typeof parsed.error_description === "string"
+        ? parsed.error_description
+            .replace(/[\r\n\t]+/gu, " ")
+            .trim()
+            .slice(0, 240)
+        : undefined;
     throw new AppError(
       "GOOGLE_TOKEN_EXCHANGE_FAILED",
       "Google did not issue a usable OAuth token.",
       1,
-      reason === undefined
-        ? { status: response.status }
-        : { status: response.status, reason },
+      {
+        status: response.status,
+        ...(reason === undefined ? {} : { reason }),
+        ...(description === undefined || description === ""
+          ? {}
+          : { description }),
+      },
     );
   }
   const token: TokenResponse = {
@@ -698,7 +716,7 @@ export async function loginGoogleOAuthProfile(
   if (dependencies.receiveAuthorizationCode) {
     const redirectUri =
       client.clientType === "desktop"
-        ? "http://127.0.0.1:3000/"
+        ? "http://127.0.0.1:3000"
         : client.redirectUri;
     const authorizationUrl = buildGoogleAuthorizationUrl({
       clientId: client.clientId,

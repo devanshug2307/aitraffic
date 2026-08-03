@@ -297,7 +297,7 @@ test("uses PKCE without a client secret for the Desktop OAuth client", async () 
   const result = await loginGoogleOAuthProfile("desktop", vault, {
     fetch: fetchImplementation,
     receiveAuthorizationCode: async (url, redirectUri) => {
-      assert.equal(redirectUri, "http://127.0.0.1:3000/");
+      assert.equal(redirectUri, "http://127.0.0.1:3000");
       assert.equal(new URL(url).searchParams.get("client_id"), TRAFFICCLAW_DESKTOP_CLIENT_ID);
       return "desktop-code";
     },
