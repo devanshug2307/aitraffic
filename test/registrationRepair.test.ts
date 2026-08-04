@@ -139,7 +139,7 @@ test("accepts npx --yes but refuses to downgrade a newer package pin", async () 
   const cwd = await mkdtemp(path.join(tmpdir(), "aitraffic-repair-"));
   let configuredArgs = [
     "--yes",
-    "aitraffic@0.8.0",
+    "aitraffic@0.8.1",
     "mcp",
     "serve",
   ];
