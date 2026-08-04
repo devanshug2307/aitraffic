@@ -5,6 +5,13 @@ import { createServer } from "node:http";
 import path from "node:path";
 
 import { AppError } from "../../core/result.js";
+import {
+  brokerStartUrl,
+  createBrokerHandoffKeys,
+  decryptBrokerHandoff,
+  refreshBrokerToken,
+  type BrokerToken,
+} from "./broker.js";
 import { validateGoogleProfile } from "./config.js";
 import type {
   GoogleCredentialVault,
@@ -22,6 +29,8 @@ const DEFAULT_WEB_REDIRECT_URI =
 export const TRAFFICCLAW_DESKTOP_CLIENT_ID =
   "94795138733-oj8eovhdkgppu5k2j3oifcbhhl3l98lb.apps.googleusercontent.com";
 export const TRAFFICCLAW_DESKTOP_REDIRECT_URI = "http://127.0.0.1:0/";
+export const TRAFFICCLAW_BROKER_URL = "https://auth.trafficclaw.com/aitraffic";
+const TRAFFICCLAW_BROKER_CLIENT_ID = "aitraffic-trafficclaw-broker-v1";
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1_000;
 
 export const GOOGLE_READ_ONLY_SCOPES = [
@@ -208,7 +217,7 @@ export function parseGoogleOAuthClientJson(contents: string): {
   };
 }
 
-export async function configureTrafficClawDesktopOAuthClient(options: {
+export async function configureTrafficClawOAuthBroker(options: {
   vault: GoogleCredentialVault;
   now?: Date;
   replaceExisting?: boolean;
@@ -220,7 +229,7 @@ export async function configureTrafficClawDesktopOAuthClient(options: {
   const existing = await options.vault.getClient();
   if (
     existing !== null &&
-    existing.clientId !== TRAFFICCLAW_DESKTOP_CLIENT_ID &&
+    existing.clientId !== TRAFFICCLAW_BROKER_CLIENT_ID &&
     options.replaceExisting !== true
   ) {
     throw new AppError(
@@ -230,14 +239,14 @@ export async function configureTrafficClawDesktopOAuthClient(options: {
   }
   await options.vault.setClient({
     schemaVersion: "0.2.0",
-    clientId: TRAFFICCLAW_DESKTOP_CLIENT_ID,
-    clientType: "desktop",
-    redirectUri: TRAFFICCLAW_DESKTOP_REDIRECT_URI,
+    clientId: TRAFFICCLAW_BROKER_CLIENT_ID,
+    clientType: "broker",
+    redirectUri: TRAFFICCLAW_BROKER_URL,
     configuredAt: (options.now ?? new Date()).toISOString(),
   });
   return {
     configured: true,
-    redirectUri: TRAFFICCLAW_DESKTOP_REDIRECT_URI,
+    redirectUri: TRAFFICCLAW_BROKER_URL,
     vaultBackend: options.vault.backendInfo(),
   };
 }
@@ -552,6 +561,144 @@ async function receiveLocalAuthorizationCode(
   });
 }
 
+async function receiveBrokerToken(
+  options: {
+    brokerUrl: string;
+    state: string;
+  },
+  onInstruction?: (message: string) => void,
+): Promise<BrokerToken> {
+  const keys = createBrokerHandoffKeys();
+  return new Promise<BrokerToken>((resolve, reject) => {
+    const browserHeaders = {
+      "cache-control": "no-store",
+      "content-security-policy": "default-src 'none'",
+      "content-type": "text/html; charset=utf-8",
+      "x-content-type-options": "nosniff",
+    };
+    let settled = false;
+    const finish = (error: Error | null, token?: BrokerToken) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      server.close();
+      if (error) {
+        reject(error);
+      } else if (token) {
+        resolve(token);
+      }
+    };
+    const server = createServer((request, response) => {
+      const requestUrl = new URL(
+        request.url ?? "/",
+        `http://${request.headers.host ?? "127.0.0.1"}`,
+      );
+      if (request.method !== "GET" || requestUrl.pathname !== "/") {
+        response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+        response.end("Not found");
+        return;
+      }
+      if (requestUrl.searchParams.get("state") !== options.state) {
+        response.writeHead(400, browserHeaders);
+        response.end(
+          "<h1>AItraffic authorization failed</h1><p>State validation failed. Return to the terminal.</p>",
+        );
+        finish(
+          new AppError(
+            "GOOGLE_OAUTH_STATE_MISMATCH",
+            "AItraffic OAuth state validation failed.",
+            1,
+          ),
+        );
+        return;
+      }
+      const handoff = requestUrl.searchParams.get("handoff");
+      if (!handoff || handoff.length > 24_000) {
+        response.writeHead(400, browserHeaders);
+        response.end(
+          "<h1>AItraffic authorization failed</h1><p>Return to the terminal and try again.</p>",
+        );
+        finish(
+          new AppError(
+            "GOOGLE_BROKER_HANDOFF_INVALID",
+            "AItraffic did not receive a usable authorization response.",
+            1,
+          ),
+        );
+        return;
+      }
+      try {
+        const token = decryptBrokerHandoff({
+          handoff,
+          keys,
+          localState: options.state,
+        });
+        response.writeHead(200, browserHeaders);
+        response.end(
+          "<h1>AItraffic is connected</h1><p>You can close this tab and return to the terminal.</p>",
+        );
+        finish(null, token);
+      } catch (error) {
+        response.writeHead(400, browserHeaders);
+        response.end(
+          "<h1>AItraffic authorization failed</h1><p>Return to the terminal and try again.</p>",
+        );
+        finish(
+          error instanceof Error
+            ? error
+            : new AppError(
+                "GOOGLE_BROKER_HANDOFF_INVALID",
+                "AItraffic did not receive a usable authorization response.",
+                1,
+              ),
+        );
+      }
+    });
+    server.once("error", () => {
+      finish(
+        new AppError(
+          "GOOGLE_CALLBACK_UNAVAILABLE",
+          "AItraffic could not open a local browser callback. Close the process using the callback port and try again.",
+          1,
+        ),
+      );
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        finish(
+          new AppError(
+            "GOOGLE_CALLBACK_UNAVAILABLE",
+            "AItraffic could not determine the local browser callback address.",
+            1,
+          ),
+        );
+        return;
+      }
+      const callback = `http://127.0.0.1:${address.port}`;
+      const authorizationUrl = brokerStartUrl({
+        brokerUrl: options.brokerUrl,
+        callback,
+        state: options.state,
+        publicKey: keys.publicKey,
+      });
+      openAuthorizationUrl(authorizationUrl);
+      onInstruction?.(
+        `Complete Google consent in your browser. If a tab did not open, use:\n${authorizationUrl}`,
+      );
+    });
+    const timeout = setTimeout(() => {
+      finish(
+        new AppError(
+          "GOOGLE_OAUTH_TIMEOUT",
+          "Google authorization timed out before the local connection was completed.",
+        ),
+      );
+    }, LOGIN_TIMEOUT_MS);
+    timeout.unref();
+  });
+}
+
 async function parseTokenResponse(response: Response): Promise<TokenResponse> {
   let parsed: unknown;
   try {
@@ -711,46 +858,54 @@ export async function loginGoogleOAuthProfile(
     );
   }
   const state = base64Url(randomBytes(32));
-  const pkce = createPkcePair();
-  let authorization: AuthorizationCodeResult;
-  if (dependencies.receiveAuthorizationCode) {
-    const redirectUri =
-      client.clientType === "desktop"
-        ? "http://127.0.0.1:3000"
-        : client.redirectUri;
-    const authorizationUrl = buildGoogleAuthorizationUrl({
-      clientId: client.clientId,
-      redirectUri,
-      state,
-      codeChallenge: pkce.challenge,
-    });
-    authorization = {
-      code: await dependencies.receiveAuthorizationCode(
-        authorizationUrl,
-        redirectUri,
-        state,
-      ),
-      redirectUri,
-    };
-  } else {
-    authorization = await receiveLocalAuthorizationCode(
-      {
-        clientId: client.clientId,
-        redirectUri: client.redirectUri,
-        state,
-        codeChallenge: pkce.challenge,
-      },
-      state,
+  let token: TokenResponse;
+  if (client.clientType === "broker") {
+    token = await receiveBrokerToken(
+      { brokerUrl: client.redirectUri, state },
       dependencies.onInstruction,
     );
+  } else {
+    const pkce = createPkcePair();
+    let authorization: AuthorizationCodeResult;
+    if (dependencies.receiveAuthorizationCode) {
+      const redirectUri =
+        client.clientType === "desktop"
+          ? "http://127.0.0.1:3000"
+          : client.redirectUri;
+      const authorizationUrl = buildGoogleAuthorizationUrl({
+        clientId: client.clientId,
+        redirectUri,
+        state,
+        codeChallenge: pkce.challenge,
+      });
+      authorization = {
+        code: await dependencies.receiveAuthorizationCode(
+          authorizationUrl,
+          redirectUri,
+          state,
+        ),
+        redirectUri,
+      };
+    } else {
+      authorization = await receiveLocalAuthorizationCode(
+        {
+          clientId: client.clientId,
+          redirectUri: client.redirectUri,
+          state,
+          codeChallenge: pkce.challenge,
+        },
+        state,
+        dependencies.onInstruction,
+      );
+    }
+    token = await exchangeAuthorizationCode({
+      fetch: dependencies.fetch ?? fetch,
+      client,
+      code: authorization.code,
+      verifier: pkce.verifier,
+      redirectUri: authorization.redirectUri,
+    });
   }
-  const token = await exchangeAuthorizationCode({
-    fetch: dependencies.fetch ?? fetch,
-    client,
-    code: authorization.code,
-    verifier: pkce.verifier,
-    redirectUri: authorization.redirectUri,
-  });
   const grantedScopes =
     token.scopes.length > 0
       ? token.scopes
@@ -894,20 +1049,29 @@ export async function refreshGoogleOAuthProfile(options: {
       1,
     );
   }
-  const body = new URLSearchParams({
-    client_id: client.clientId,
-    refresh_token: options.profile.refreshToken,
-    grant_type: "refresh_token",
-  });
-  if (client.clientSecret) {
-    body.set("client_secret", client.clientSecret);
-  }
-  const response = await (options.fetch ?? fetch)(GOOGLE_TOKEN_URL, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body,
-  });
-  const token = await parseTokenResponse(response);
+  const token =
+    client.clientType === "broker"
+      ? await refreshBrokerToken({
+          brokerUrl: client.redirectUri,
+          refreshToken: options.profile.refreshToken,
+          fetch: options.fetch ?? fetch,
+        })
+      : await (async () => {
+          const body = new URLSearchParams({
+            client_id: client.clientId,
+            refresh_token: options.profile.refreshToken ?? "",
+            grant_type: "refresh_token",
+          });
+          if (client.clientSecret) {
+            body.set("client_secret", client.clientSecret);
+          }
+          const response = await (options.fetch ?? fetch)(GOOGLE_TOKEN_URL, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body,
+          });
+          return parseTokenResponse(response);
+        })();
   const now = options.now ?? new Date();
   const scopes =
     token.scopes.length > 0 ? token.scopes : options.profile.scopes;

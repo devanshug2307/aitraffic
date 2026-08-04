@@ -7,11 +7,12 @@ import test from "node:test";
 import { LocalGoogleDataProvider } from "../src/connectors/google/localProvider.js";
 import {
   GOOGLE_READ_ONLY_SCOPES,
+  TRAFFICCLAW_BROKER_URL,
   TRAFFICCLAW_DESKTOP_CLIENT_ID,
   TRAFFICCLAW_DESKTOP_REDIRECT_URI,
   buildGoogleAuthorizationUrl,
   configureGoogleOAuthClient,
-  configureTrafficClawDesktopOAuthClient,
+  configureTrafficClawOAuthBroker,
   getGoogleOAuthStatus,
   googleOAuthClientKey,
   loginGoogleOAuthProfile,
@@ -236,19 +237,18 @@ test("rejects non-loopback Web application redirects", () => {
   );
 });
 
-test("configures the public TrafficClaw Desktop OAuth client without a secret", async () => {
+test("configures the TrafficClaw hosted OAuth broker without a local secret", async () => {
   const store = new MemorySecretStore();
   const vault = new SecureGoogleVault(store);
-  const result = await configureTrafficClawDesktopOAuthClient({
+  const result = await configureTrafficClawOAuthBroker({
     vault,
     now: new Date("2026-08-02T00:00:00.000Z"),
   });
 
   assert.equal(result.configured, true);
-  assert.equal(result.redirectUri, TRAFFICCLAW_DESKTOP_REDIRECT_URI);
+  assert.equal(result.redirectUri, TRAFFICCLAW_BROKER_URL);
   const client = await vault.getClient();
-  assert.equal(client?.clientId, TRAFFICCLAW_DESKTOP_CLIENT_ID);
-  assert.equal(client?.clientType, "desktop");
+  assert.equal(client?.clientType, "broker");
   assert.equal(client?.clientSecret, undefined);
 });
 
@@ -258,20 +258,26 @@ test("requires an explicit replacement before changing a local OAuth client", as
   await vault.setClient(oauthClient());
 
   await assert.rejects(
-    configureTrafficClawDesktopOAuthClient({ vault }),
+    configureTrafficClawOAuthBroker({ vault }),
     /different local Google OAuth client/,
   );
-  await configureTrafficClawDesktopOAuthClient({
+  await configureTrafficClawOAuthBroker({
     vault,
     replaceExisting: true,
   });
-  assert.equal((await vault.getClient())?.clientId, TRAFFICCLAW_DESKTOP_CLIENT_ID);
+  assert.equal((await vault.getClient())?.clientType, "broker");
 });
 
-test("uses PKCE without a client secret for the Desktop OAuth client", async () => {
+test("uses PKCE without a client secret for a manually configured Desktop OAuth client", async () => {
   const store = new MemorySecretStore();
   const vault = new SecureGoogleVault(store);
-  await configureTrafficClawDesktopOAuthClient({ vault });
+  await vault.setClient({
+    schemaVersion: "0.2.0",
+    clientId: TRAFFICCLAW_DESKTOP_CLIENT_ID,
+    clientType: "desktop",
+    redirectUri: TRAFFICCLAW_DESKTOP_REDIRECT_URI,
+    configuredAt: "2026-08-04T00:00:00.000Z",
+  });
   const fetchImplementation = (async (
     input: string | URL | Request,
     init?: RequestInit,

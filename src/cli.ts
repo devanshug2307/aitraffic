@@ -19,7 +19,7 @@ import {
 } from "./connectors/google/config.js";
 import {
   configureGoogleOAuthClient,
-  configureTrafficClawDesktopOAuthClient,
+  configureTrafficClawOAuthBroker,
   getGoogleOAuthStatus,
   loginGoogleOAuthProfile,
   revokeGoogleOAuthProfile,
@@ -1316,12 +1316,12 @@ async function runCommand(args: string[]): Promise<CommandResult<unknown>> {
     const vault = await createSystemGoogleVault();
     return success(
       "auth google use-trafficclaw",
-      await configureTrafficClawDesktopOAuthClient({
+      await configureTrafficClawOAuthBroker({
         vault,
         replaceExisting: replace.present,
       }),
       [
-        "TrafficClaw's public Desktop OAuth client uses PKCE; your Google tokens remain in the operating-system credential store.",
+        "TrafficClaw handles the OAuth client secret server-side; your Google tokens remain in the operating-system credential store.",
       ],
     );
   }

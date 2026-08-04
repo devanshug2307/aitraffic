@@ -41,12 +41,11 @@ The working alpha includes:
 - Codex and Claude Code setup guidance;
 - research and roadmap documentation under `docs/research/`.
 
-AItraffic does not yet include scheduled collection or a hosted connector. The
-official beta is **AItraffic by TrafficClaw**: Google consent identifies
-TrafficClaw, while AItraffic provides the terminal and agent experience.
-Native OAuth uses TrafficClaw's public Desktop client by default, or imports a
-bring-your-own client from downloaded JSON or a private environment file. No
-Web client secret is bundled in npm. The person running the CLI personally
+AItraffic does not yet include scheduled collection. The official beta is
+**AItraffic by TrafficClaw**: Google consent identifies TrafficClaw, while
+AItraffic provides the terminal and agent experience. Native OAuth uses a
+TrafficClaw-hosted broker by default; its Google client secret stays on the
+broker VPS and is never bundled in npm. The person running the CLI personally
 completes Google consent, and tokens stay in the OS credential store. Tokens
 are never printed or exposed through MCP.
 
@@ -77,12 +76,11 @@ npx -y aitraffic@latest opportunities list --format json
 npx -y aitraffic@latest audit compare --latest --format json
 ```
 
-Connect Google directly:
+Connect Google with the no-JSON official beta:
 
 ```bash
-# Import a Google Web application client into the OS credential store.
-npx -y aitraffic@latest auth google configure \
-  --from-client-json /absolute/path/to/client_secret.json
+# Configures the TrafficClaw broker identity locally; no client JSON is needed.
+npx -y aitraffic@latest auth google use-trafficclaw
 
 # You personally complete Google sign-in and consent in the browser.
 npx -y aitraffic@latest auth google login --profile work
@@ -106,10 +104,11 @@ npx -y aitraffic@latest report acquisition --days 28 --format json
 
 The official beta uses TrafficClaw's production Google OAuth project with
 verified read-only Analytics access. The consent screen says **TrafficClaw**;
-AItraffic is a TrafficClaw product. A fresh CLI can use TrafficClaw's public
-Desktop OAuth client with PKCE; no client secret or hosted token broker is
-needed. Google tokens remain in the user's OS credential store. Public hosted
-accounts, scheduled work, and cross-device sessions remain a future option.
+AItraffic is a TrafficClaw product. A fresh CLI uses the TrafficClaw OAuth
+broker; no client secret or downloaded JSON is needed. The broker encrypts the
+one-time handoff to the CLI and does not persist user tokens. Google tokens
+remain in the user's OS credential store. Public hosted accounts, scheduled
+work, and cross-device sessions remain a future option.
 See the [Google connector guide](docs/guides/google-connector.md) and the
 [TrafficClaw product identity guide](docs/guides/trafficclaw-product-identity.md).
 
