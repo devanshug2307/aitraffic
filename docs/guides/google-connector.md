@@ -2,12 +2,12 @@
 
 AItraffic supports two compatible read-only providers:
 
-1. **Native local OAuth** — the packaged CLI owns the browser consent flow and calls GA4 and Search Console directly.
+1. **Managed local OAuth** — the CLI opens browser consent through the TrafficClaw broker while keeping resulting tokens in the local OS credential store.
 2. **External command adapter** — an existing TrafficClaw or other local profile owns OAuth and returns typed JSON to AItraffic.
 
 Both providers implement the same `GoogleDataProvider` contract, so GA4, Search Console, acquisition reports, and MCP tools keep the same output shape.
 
-## Native OAuth beta
+## Managed local OAuth beta
 
 AItraffic supports Google **Desktop app** and **Web application** OAuth
 clients. Both keep the resulting tokens in the operating-system credential
@@ -39,21 +39,20 @@ npx -y aitraffic@latest auth google use-trafficclaw
 npx -y aitraffic@latest auth google login --profile work
 ```
 
-This uses a Google **Desktop app** client with PKCE and a temporary loopback
-callback. Its public client ID is packaged with AItraffic; no client secret is
-packaged. The user completes consent in their system browser and the resulting
-access and refresh tokens remain only in that computer's OS credential store.
-The Google consent page identifies **TrafficClaw** as AItraffic's OAuth
-provider; this is disclosed before consent but does not require the user to
-understand any OAuth configuration.
+This uses TrafficClaw's HTTPS OAuth broker and a temporary loopback callback.
+The Google client secret remains only on the broker VPS; no client secret or
+client JSON is packaged. The user completes consent in their system browser.
+The broker encrypts the one-time handoff to the CLI, and the resulting access
+and refresh tokens remain only in that computer's OS credential store. The
+Google consent page identifies **TrafficClaw** as AItraffic's OAuth provider;
+this is disclosed before consent but does not require the user to understand
+any OAuth configuration.
 
 Use a distinct Web OAuth client for each product and deployment environment.
-For example, keep TrafficClaw production, AItraffic local CLI, and a future
-AItraffic hosted service on separate clients. This prevents one redirect URI or
-credential rotation from breaking another product. Do not publish or share a
-downloaded **Web** client JSON. A future hosted login still requires a
-tenant-scoped encrypted token broker and an AItraffic public site that
-accurately states it is a TrafficClaw product.
+For example, keep TrafficClaw production, AItraffic's managed broker, and a
+future AItraffic hosted service on separate clients. This prevents one redirect
+URI or credential rotation from breaking another product. Do not publish or
+share a downloaded **Web** client JSON.
 
 The Google account completing consent must already have access to the relevant GA4 property and Search Console site.
 

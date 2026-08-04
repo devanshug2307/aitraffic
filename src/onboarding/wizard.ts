@@ -22,7 +22,7 @@ import {
 } from "../connectors/google/config.js";
 import {
   configureGoogleOAuthClient,
-  configureTrafficClawDesktopOAuthClient,
+  configureTrafficClawOAuthBroker,
   getGoogleOAuthStatus,
   loginGoogleOAuthProfile,
 } from "../connectors/google/oauth.js";
@@ -407,10 +407,10 @@ async function connectGoogleProfile(options: {
       clientJsonPath
         ? `Import OAuth client: ${clientJsonPath}`
         : options.useTrafficClaw
-          ? "Use AItraffic's built-in Google Desktop client with PKCE"
+          ? "Use AItraffic's secure Google sign-in service"
         : "Use the OAuth client already stored on this computer",
       `Open browser consent for profile: ${normalizedProfile}`,
-      "Google consent identifies TrafficClaw as AItraffic's OAuth provider",
+      "Google consent identifies AItraffic by TrafficClaw as the OAuth provider",
       "Request only read-only Analytics and Search Console scopes",
       "Store the client and tokens only in the OS credential store",
     ].join("\n"),
@@ -435,12 +435,12 @@ async function connectGoogleProfile(options: {
   const vault = await createSystemGoogleVault();
   if (options.useTrafficClaw) {
     const progress = spinner();
-    progress.start("Configuring TrafficClaw local OAuth");
+    progress.start("Configuring secure AItraffic Google sign-in");
     try {
-      await configureTrafficClawDesktopOAuthClient({ vault });
-      progress.stop("TrafficClaw local OAuth is ready");
+      await configureTrafficClawOAuthBroker({ vault });
+      progress.stop("AItraffic Google sign-in is ready");
     } catch (error) {
-      progress.stop("TrafficClaw local OAuth configuration failed");
+      progress.stop("AItraffic Google sign-in configuration failed");
       throw error;
     }
   }

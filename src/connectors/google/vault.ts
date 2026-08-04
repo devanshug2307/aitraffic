@@ -8,7 +8,7 @@ export interface GoogleOAuthClient {
   schemaVersion: "0.2.0";
   clientId: string;
   clientSecret?: string;
-  clientType?: "web" | "desktop";
+  clientType?: "web" | "desktop" | "broker";
   redirectUri: string;
   configuredAt: string;
 }
@@ -142,7 +142,8 @@ function parseClient(value: string): GoogleOAuthClient {
       typeof parsed.clientSecret !== "string") ||
     (parsed.clientType !== undefined &&
       parsed.clientType !== "web" &&
-      parsed.clientType !== "desktop") ||
+      parsed.clientType !== "desktop" &&
+      parsed.clientType !== "broker") ||
     typeof parsed.redirectUri !== "string" ||
     typeof parsed.configuredAt !== "string"
   ) {

@@ -60,8 +60,8 @@ causal revenue.
 
 ### Google connector
 
-- Native local Google OAuth using PKCE and state validation.
-- One-command TrafficClaw Desktop OAuth setup for fresh local CLI users, with
+- Managed local Google OAuth with signed state and encrypted handoff.
+- One-command TrafficClaw OAuth broker setup for fresh local CLI users, with
   the Google tokens retained in OS credential storage.
 - Imported OAuth client configuration without bundling a client secret in npm.
 - Named Google profiles, refresh, status, and revoke.
