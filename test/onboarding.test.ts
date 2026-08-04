@@ -78,7 +78,7 @@ test("builds shell-free registration commands for all supported agents", async (
     "--",
     "npx",
     "-y",
-    "aitraffic@0.8.0",
+    "aitraffic@0.8.1",
     "mcp",
     "serve",
   ]);

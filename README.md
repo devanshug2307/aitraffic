@@ -140,7 +140,7 @@ approves the proposed diff.
 Pin an exact CLI version for reproducible automation:
 
 ```bash
-npx -y aitraffic@0.8.0 version
+npx -y aitraffic@0.8.1 version
 ```
 
 ## Terminal contract
